@@ -1,148 +1,203 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Puantaj Web Uygulaması</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="stylesheet" href="assets/style.css">
-</head>
-<body>
-    <div class="d-flex" id="wrapper">
-        <!-- Sidebar -->
-        <div class="bg-dark border-right" id="sidebar-wrapper">
-            <div class="sidebar-heading text-white">Puantaj Takip</div>
-            <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="employees"><i class="bi bi-people"></i> Personeller</a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="timesheets"><i class="bi bi-calendar-check"></i> Puantaj</a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="reports"><i class="bi bi-file-earmark-bar-graph"></i> Raporlar</a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="backup"><i class="bi bi-database-down"></i> Yedekleme</a>
-                <a href="#" class="list-group-item list-group-item-action bg-dark text-white" data-page="settings"><i class="bi bi-gear"></i> Ayarlar</a>
-            </div>
-        </div>
-        <!-- /#sidebar-wrapper -->
+<?php
+require_once 'config.php';
+require_once 'services/SpotifyService.php';
+require_once 'services/YouTubeMusicService.php';
 
-        <!-- Page Content -->
-        <div id="page-content-wrapper">
-            <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
-                <div class="container-fluid">
-                    <button class="btn btn-primary" id="menu-toggle"><i class="bi bi-list"></i></button>
-                    <h5 class="ms-3 mb-0" id="page-title">Dashboard</h5>
-                </div>
-            </nav>
+// Helper function to normalize track titles
+function normalize_string($str) {
+    // Remove content in parentheses (e.g., (Official Video), (Remastered))
+    $str = preg_replace('/\s*\(.*?\)\s*/', '', $str);
+    $str = preg_replace('/\s*\[.*?\]\s*/', '', $str);
+    // Convert to lowercase
+    $str = strtolower($str);
+    // Remove non-alphanumeric characters
+    $str = preg_replace('/[^a-z0-9\s]/', '', $str);
+    return trim($str);
+}
 
-            <div class="container-fluid p-4" id="app-content">
-                <!-- Content will be loaded here by JavaScript -->
-            </div>
-        </div>
-        <!-- /#page-content-wrapper -->
-    </div>
-    <!-- /#wrapper -->
+// Helper function to calculate string similarity
+function get_similarity($str1, $str2) {
+    similar_text($str1, $str2, $percent);
+    return $percent;
+}
 
-    <!-- Modals -->
-    <!-- Employee Modal -->
-    <div class="modal fade" id="employeeModal" tabindex="-1" aria-labelledby="employeeModalLabel" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="employeeModalLabel">Personel Ekle/Düzenle</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="employeeForm">
-              <input type="hidden" id="employeeId">
-              <div class="mb-3">
-                <label for="adSoyad" class="form-label">Ad Soyad</label>
-                <input type="text" class="form-control" id="adSoyad" required>
-              </div>
-              <div class="mb-3">
-                <label for="tcKimlikNo" class="form-label">TC Kimlik No</label>
-                <input type="text" class="form-control" id="tcKimlikNo">
-              </div>
-              <div class="mb-3">
-                <label for="telefon" class="form-label">Telefon</label>
-                <input type="text" class="form-control" id="telefon">
-              </div>
-              <div class="mb-3">
-                <label for="departman" class="form-label">Departman</label>
-                <input type="text" class="form-control" id="departman">
-              </div>
-              <div class="mb-3">
-                <label for="gorev" class="form-label">Görev</label>
-                <input type="text" class="form-control" id="gorev">
-              </div>
-              <div class="mb-3">
-                <label for="iseBaslamaTarihi" class="form-label">İşe Başlama Tarihi</label>
-                <input type="date" class="form-control" id="iseBaslamaTarihi" required>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
-            <button type="button" class="btn btn-primary" id="saveEmployee">Kaydet</button>
-          </div>
-        </div>
-      </div>
-    </div>
+// Router
+$page = $_GET['page'] ?? 'home';
 
-    <!-- Timesheet Modal -->
-    <div class="modal fade" id="timesheetModal" tabindex="-1" aria-labelledby="timesheetModalLabel" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="timesheetModalLabel">Puantaj Ekle/Düzenle</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="timesheetForm">
-              <input type="hidden" id="timesheetId">
-              <input type="hidden" id="timesheetEmployeeId">
-               <div class="mb-3">
-                  <label for="timesheetDate" class="form-label">Tarih</label>
-                  <input type="date" class="form-control" id="timesheetDate" required>
-              </div>
-              <div class="mb-3">
-                  <label for="workingHours" class="form-label">Çalışma Saati</label>
-                  <input type="number" class="form-control" id="workingHours" step="0.5" value="8">
-              </div>
-              <div class="mb-3">
-                  <label for="shiftType" class="form-label">Mesai Türü</label>
-                  <select class="form-select" id="shiftType">
-                      <option value="Gündüz">Gündüz</option>
-                      <option value="Gece">Gece</option>
-                      <option value="Resmî Tatil">Resmî Tatil</option>
-                      <option value="Özel">Özel</option>
-                  </select>
-              </div>
-              <div class="mb-3">
-                  <label for="leaveType" class="form-label">İzin Türü (Varsa)</label>
-                  <select class="form-select" id="leaveType">
-                      <option value="">Yok</option>
-                      <option value="Ücretli">Ücretli İzin</option>
-                      <option value="Ücretsiz">Ücretsiz İzin</option>
-                      <option value="Rapor">Rapor</option>
-                  </select>
-              </div>
-              <div class="mb-3">
-                  <label for="description" class="form-label">Açıklama/Not</label>
-                  <textarea class="form-control" id="description" rows="3"></textarea>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
-            <button type="button" class="btn btn-primary" id="saveTimesheet">Kaydet</button>
-          </div>
-        </div>
-      </div>
-    </div>
+if ($page === 'home') {
+    // Check if the user is authenticated with both services
+    if (!isset($_SESSION['spotify_access_token']) || !isset($_SESSION['youtube_access_token'])) {
+        include 'views/login.php';
+        exit;
+    }
 
+    $spotifyService = new SpotifyService();
+    $youTubeMusicService = new YouTubeMusicService();
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="assets/app.js"></script>
-</body>
-</html>
+    $spotifyPlaylists = $spotifyService->getUserPlaylists();
+    $youtubePlaylists = $youTubeMusicService->getUserPlaylists();
+
+    include 'views/playlist_select.php';
+    exit;
+
+} elseif ($page === 'convert' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $startTime = microtime(true);
+    include 'views/processing.php';
+    ob_implicit_flush(true);
+
+    $source = $_POST['source'];
+    $playlistId = $_POST['playlist_id'];
+    $conversionType = $_POST['convert'];
+
+    $spotifyService = new SpotifyService();
+    $youTubeMusicService = new YouTubeMusicService();
+
+    $result = [
+        'total_tracks' => 0,
+        'matched_tracks' => 0,
+        'unmatched_tracks' => 0,
+        'unmatched_list' => [],
+    ];
+
+    if ($source === 'spotify' && $conversionType === 'to_youtube') {
+        $tracks = $spotifyService->getPlaylistTracks($playlistId);
+        if ($tracks === null) {
+            $_SESSION['conversion_result'] = ['error' => "Spotify'dan şarkılar alınamadı. Lütfen tekrar deneyin."];
+            echo '<script>window.location.href="/index.php?page=result";</script>';
+            exit;
+        }
+        $result['total_tracks'] = count($tracks);
+        $playlistName = "Spotify'dan Dönüştürüldü";
+        $newPlaylist = $youTubeMusicService->createPlaylist($playlistName, 'Playlist Converter ile dönüştürüldü');
+
+        if ($newPlaylist) {
+            $i = 0;
+            foreach ($tracks as $trackItem) {
+                $i++;
+                $progress = ($i / $result['total_tracks']) * 100;
+                echo "<script>
+                    document.getElementById('progress-bar').style.width = '{$progress}%';
+                    document.getElementById('progress-text').innerText = '{$i} / {$result['total_tracks']}';
+                </script>";
+                ob_flush();
+                flush();
+
+                $track = $trackItem['track'];
+                $title = normalize_string($track['name']);
+                $artist = normalize_string($track['artists'][0]['name']);
+
+                $ytTracks = $youTubeMusicService->searchTrack($title, $artist);
+                $bestMatch = null;
+                $bestScore = 0;
+
+                foreach ($ytTracks as $ytTrack) {
+                    $ytTitle = normalize_string($ytTrack['snippet']['title']);
+                    $score = get_similarity($title, $ytTitle);
+                    if ($score > $bestScore) {
+                        $bestScore = $score;
+                        $bestMatch = $ytTrack;
+                    }
+                }
+
+                if ($bestMatch && $bestScore > 70) {
+                    $youTubeMusicService->addTrackToPlaylist($newPlaylist['id'], $bestMatch['id']['videoId']);
+                    $result['matched_tracks']++;
+                } else {
+                    $result['unmatched_tracks']++;
+                    $result['unmatched_list'][] = "{$track['name']} by {$track['artists'][0]['name']}";
+                }
+            }
+        }
+    } elseif ($source === 'youtube' && $conversionType === 'to_spotify') {
+        $tracks = $youTubeMusicService->getPlaylistTracks($playlistId);
+        if ($tracks === null) {
+            $_SESSION['conversion_result'] = ['error' => "YouTube'dan şarkılar alınamadı. Lütfen tekrar deneyin."];
+            echo '<script>window.location.href="/index.php?page=result";</script>';
+            exit;
+        }
+        $result['total_tracks'] = count($tracks);
+        $playlistName = "YouTube'dan Dönüştürüldü";
+        $newPlaylist = $spotifyService->createPlaylist($playlistName, 'Playlist Converter ile dönüştürüldü');
+
+        if ($newPlaylist) {
+            $spotifyTrackUris = [];
+            $i = 0;
+            foreach ($tracks as $trackItem) {
+                $i++;
+                $progress = ($i / $result['total_tracks']) * 100;
+                echo "<script>
+                    document.getElementById('progress-bar').style.width = '{$progress}%';
+                    document.getElementById('progress-text').innerText = '{$i} / {$result['total_tracks']}';
+                </script>";
+                ob_flush();
+                flush();
+
+                $title = normalize_string($trackItem['snippet']['title']);
+                $artist = '';
+                if (isset($trackItem['snippet']['videoOwnerChannelTitle'])) {
+                    $artist = normalize_string(str_replace(' - Topic', '', $trackItem['snippet']['videoOwnerChannelTitle']));
+                }
+
+                $spotifyTracks = $spotifyService->searchTrack($title, $artist);
+                $bestMatch = null;
+                $bestScore = 0;
+
+                foreach ($spotifyTracks as $spotifyTrack) {
+                    $spotifyTitle = normalize_string($spotifyTrack['name']);
+                    $score = get_similarity($title, $spotifyTitle);
+                    if ($score > $bestScore) {
+                        $bestScore = $score;
+                        $bestMatch = $spotifyTrack;
+                    }
+                }
+
+                if ($bestMatch && $bestScore > 70) {
+                    $spotifyTrackUris[] = $bestMatch['uri'];
+                    $result['matched_tracks']++;
+                } else {
+                    $result['unmatched_tracks']++;
+                    $result['unmatched_list'][] = $trackItem['snippet']['title'];
+                }
+            }
+            if (!empty($spotifyTrackUris)) {
+                $spotifyService->addTracksToPlaylist($newPlaylist['id'], $spotifyTrackUris);
+            }
+        }
+    }
+
+    $_SESSION['conversion_result'] = $result;
+    $_SESSION['conversion_result']['processing_time'] = microtime(true) - $startTime;
+    echo '<script>window.location.href="/index.php?page=result";</script>';
+    exit;
+
+} elseif ($page === 'result') {
+    $result = $_SESSION['conversion_result'] ?? null;
+    unset($_SESSION['conversion_result']);
+    include 'views/result.php';
+    exit;
+
+} elseif ($page === 'login' && isset($_GET['provider'])) {
+    if ($_GET['provider'] === 'spotify') {
+        $params = [
+            'client_id' => SPOTIFY_CLIENT_ID,
+            'response_type' => 'code',
+            'redirect_uri' => SPOTIFY_REDIRECT_URI,
+            'scope' => 'playlist-read-private playlist-modify-private playlist-modify-public',
+        ];
+        header('Location: https://accounts.spotify.com/authorize?' . http_build_query($params));
+        exit;
+    } elseif ($_GET['provider'] === 'youtube') {
+        $params = [
+            'client_id' => YOUTUBE_CLIENT_ID,
+            'response_type' => 'code',
+            'redirect_uri' => YOUTUBE_REDIRECT_URI,
+            'scope' => 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube',
+            'access_type' => 'offline',
+        ];
+        header('Location: https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params));
+        exit;
+    }
+}
+
+// Fallback to home
+header('Location: /index.php?page=home');
