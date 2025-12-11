@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Puantaj Takip Programı</title>
+  <style>
+    :root {
+      --primary: #0066cc;
+      --accent: #009688;
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --border: #d9e1ec;
+      --text: #1f2d3d;
+      --muted: #607080;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .brand {
+      font-weight: 700;
+      color: var(--primary);
+      font-size: 18px;
+      letter-spacing: 0.4px;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    nav button {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-weight: 600;
+    }
+    nav button.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 6px 16px rgba(0,102,204,0.22);
+    }
+    nav button:hover { transform: translateY(-1px); }
+    main { padding: 18px; max-width: 1200px; margin: 0 auto 32px; }
+    .section { display: none; }
+    .section.active { display: block; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+    }
+    h2 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+    h3 { margin-top: 0; }
+    form { display: grid; gap: 12px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    label { font-weight: 600; color: var(--muted); font-size: 14px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fbfdff;
+    }
+    textarea { min-height: 70px; }
+    button.primary, .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(0,102,204,0.22);
+    }
+    button.secondary, .btn-secondary {
+      background: #eef2f7;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+      background: #fff;
+    }
+    th { background: #f1f5fb; }
+    .table-wrapper { overflow-x: auto; }
+    .actions button { margin-right: 6px; }
+    .badge { padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+    .muted { color: var(--muted); }
+    .highlight { background: #eaf2ff; border-color: #c6ddff; }
+    .weekend-sat { background: #fff3e0; }
+    .weekend-sun { background: #ffebee; }
+    .flex-between { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .message { padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; }
+    .success { background: #e6ffed; border: 1px solid #b5f0c5; color: #146a33; }
+    .error { background: #ffe8e6; border: 1px solid #f5c0bc; color: #a3312e; }
+    .info { background: #e8f3ff; border: 1px solid #c6ddff; color: #1d4c8d; }
+    .small { font-size: 12px; color: var(--muted); }
+    .hidden { display: none; }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      background: #eef2f7;
+      border-radius: 16px;
+      margin-right: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+    .login-card {
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 380px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+    }
+    @media (max-width: 720px) {
+      nav button { flex: 1 1 45%; }
+      main { padding: 12px; }
+      th, td { white-space: nowrap; }
+      h2 { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div class="brand">Puantaj Takip Programı</div>
+      <nav id="nav">
+        <button data-section="personel" class="active">Personeller</button>
+        <button data-section="puantaj">Puantaj</button>
+        <button data-section="raporlar">Raporlar</button>
+        <button data-section="ayarlar">Ayarlar</button>
+        <button data-section="yedek">Yedekle / Geri Yükle</button>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <div id="messageArea"></div>
+
+    <section id="personel" class="section active">
+      <div class="card">
+        <h2>Personeller</h2>
+        <form id="employeeForm">
+          <div class="grid-2">
+            <div>
+              <label>Ad Soyad *</label>
+              <input type="text" id="empName" required>
+            </div>
+            <div>
+              <label>Personel Kodu *</label>
+              <input type="text" id="empCode" required>
+            </div>
+            <div>
+              <label>Departman</label>
+              <input type="text" id="empDept">
+            </div>
+            <div>
+              <label>Pozisyon</label>
+              <input type="text" id="empPos">
+            </div>
+            <div>
+              <label>İşe Giriş Tarihi</label>
+              <input type="date" id="empStart">
+            </div>
+            <div>
+              <label>Çalışma Tipi</label>
+              <input type="text" id="empWorkType" placeholder="Tam Zamanlı, Yarı Zamanlı, Taşeron...">
+            </div>
+            <div>
+              <label>Saatlik Ücret (₺)</label>
+              <input type="number" step="0.01" id="empRate" placeholder="0">
+            </div>
+          </div>
+          <div class="btn-group">
+            <button type="submit" class="btn-primary" id="empSubmit">Ekle</button>
+            <button type="button" class="btn-secondary hidden" id="empCancel">İptal</button>
+          </div>
+          <input type="hidden" id="editingId">
+        </form>
+      </div>
+      <div class="card">
+        <div class="flex-between">
+          <h3>Personel Listesi</h3>
+          <span class="muted small" id="empCount"></span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Personel Kodu</th>
+                <th>Ad Soyad</th>
+                <th>Departman</th>
+                <th>Pozisyon</th>
+                <th>İşe Giriş Tarihi</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="empTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="puantaj" class="section">
+      <div class="card">
+        <h2>Puantaj</h2>
+        <div class="grid-2">
+          <div>
+            <label>Ay</label>
+            <input type="month" id="attMonth">
+          </div>
+          <div>
+            <label>Personel</label>
+            <select id="attEmployee"></select>
+          </div>
+        </div>
+        <div class="btn-group" style="margin-top:12px;">
+          <button class="btn-primary" id="attLoad">Görüntüle</button>
+          <button class="secondary" id="attCopyPrev">Önceki Günü Kopyala</button>
+        </div>
+      </div>
+      <div class="card" id="attCard" style="display:none;">
+        <div class="flex-between">
+          <h3>Seçili Ay Günleri</h3>
+          <button class="btn-primary" id="attSave">Puantajı Kaydet</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Gün</th>
+                <th>Giriş Saati</th>
+                <th>Çıkış Saati</th>
+                <th>Toplam Çalışma Saati</th>
+                <th>Mesai Türü</th>
+                <th>İzin / Devamsızlık</th>
+                <th>Not</th>
+              </tr>
+            </thead>
+            <tbody id="attTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="raporlar" class="section">
+      <div class="card">
+        <h2>Raporlar</h2>
+        <div class="grid-2">
+          <div>
+            <label>Rapor Türü</label>
+            <select id="reportType">
+              <option value="monthly">Personel Aylık Puantaj Raporu</option>
+              <option value="dept">Departman Özeti</option>
+            </select>
+          </div>
+          <div class="monthly-only">
+            <label>Ay</label>
+            <input type="month" id="reportMonth">
+          </div>
+          <div>
+            <label>Personel</label>
+            <select id="reportEmployee"></select>
+          </div>
+          <div class="dept-only">
+            <label>Departman</label>
+            <input type="text" id="reportDept" placeholder="Boş bırakılırsa tüm departmanlar">
+          </div>
+          <div class="dept-only">
+            <label>Başlangıç Tarihi</label>
+            <input type="date" id="reportStart">
+          </div>
+          <div class="dept-only">
+            <label>Bitiş Tarihi</label>
+            <input type="date" id="reportEnd">
+          </div>
+          <div>
+            <label>İzin Türü Filtresi (opsiyonel)</label>
+            <select id="reportLeave">
+              <option value="">(Tümü)</option>
+              <option>Yıllık İzin</option>
+              <option>Ücretsiz İzin</option>
+              <option>Hastalık Raporu</option>
+              <option>Eksik Gün</option>
+              <option>Görevli</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-group" style="margin-top:12px;">
+          <button class="btn-primary" id="reportGenerate">Raporu Oluştur</button>
+          <button class="secondary" id="reportCopy">Panoya Kopyala</button>
+          <button class="secondary" id="reportPrint">Yazdır</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Rapor Sonuçları</h3>
+        <div id="reportResult" class="table-wrapper"></div>
+      </div>
+    </section>
+
+    <section id="ayarlar" class="section">
+      <div class="card">
+        <h2>Ayarlar</h2>
+        <form id="settingsForm">
+          <div class="grid-2">
+            <div>
+              <label>Çalışma Günleri</label>
+              <div id="workdays" class="btn-group"></div>
+            </div>
+            <div>
+              <label>Günlük Normal Çalışma Saati</label>
+              <input type="number" step="0.1" id="normalHours" placeholder="8">
+            </div>
+            <div>
+              <label>Gece Mesaisi Başlangıç</label>
+              <input type="time" id="nightStart" value="22:00">
+            </div>
+            <div>
+              <label>Gece Mesaisi Bitiş</label>
+              <input type="time" id="nightEnd" value="06:00">
+            </div>
+            <div>
+              <label>Yönetici Şifresi (boş bırakılırsa kapalı)</label>
+              <input type="password" id="adminPassword" placeholder="Yeni şifre">
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:12px;">
+            <button type="submit" class="btn-primary">Ayarları Kaydet</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="yedek" class="section">
+      <div class="card">
+        <h2>Yedekle / Geri Yükle</h2>
+        <div class="btn-group">
+          <button class="btn-primary" id="backupBtn">Verileri JSON Olarak Yedekle</button>
+          <input type="file" id="restoreFile" accept="application/json">
+          <button class="secondary" id="restoreBtn">Yedek Geri Yükle</button>
+        </div>
+        <p class="small muted">Yedek dosyası; personeller, puantaj ve ayarlar verilerini içerir.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="loginOverlay" class="login-overlay hidden">
+    <div class="login-card">
+      <h3>Yönetici Girişi</h3>
+      <p class="small muted">Lütfen şifrenizi girin</p>
+      <input type="password" id="loginPass" placeholder="Şifre">
+      <div class="btn-group" style="margin-top:12px;">
+        <button class="btn-primary" id="loginBtn">Giriş Yap</button>
+        <button class="secondary" id="loginCancel">Vazgeç</button>
+      </div>
+      <div id="loginMsg" class="small muted" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const LS_KEYS = {
+      employees: 'puantaj_employees',
+      attendance: 'puantaj_attendance',
+      settings: 'puantaj_settings'
+    };
+
+    let employees = JSON.parse(localStorage.getItem(LS_KEYS.employees) || '[]');
+    let attendance = JSON.parse(localStorage.getItem(LS_KEYS.attendance) || '{}');
+    let settings = JSON.parse(localStorage.getItem(LS_KEYS.settings) || '{}');
+
+    const messageArea = document.getElementById('messageArea');
+
+    function showMessage(text, type='info') {
+      messageArea.innerHTML = `<div class="message ${type}">${text}</div>`;
+      setTimeout(() => messageArea.innerHTML = '', 3200);
+    }
+
+    function saveEmployees() {
+      localStorage.setItem(LS_KEYS.employees, JSON.stringify(employees));
+    }
+    function saveAttendance() {
+      localStorage.setItem(LS_KEYS.attendance, JSON.stringify(attendance));
+    }
+    function saveSettings() {
+      localStorage.setItem(LS_KEYS.settings, JSON.stringify(settings));
+    }
+
+    function renderNav() {
+      document.querySelectorAll('nav button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const target = btn.dataset.section;
+          document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
+          document.getElementById(target).classList.add('active');
+          if (target === 'personel') renderEmployees();
+          if (target === 'puantaj') populateAttSelectors();
+          if (target === 'raporlar') populateReportSelectors();
+        });
+      });
+    }
+
+    function renderEmployees() {
+      const tbody = document.getElementById('empTableBody');
+      tbody.innerHTML = '';
+      employees.forEach(emp => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${emp.code || '-'}</td>
+          <td>${emp.name || '-'}</td>
+          <td>${emp.department || '-'}</td>
+          <td>${emp.position || '-'}</td>
+          <td>${emp.startDate || '-'}</td>
+          <td class="actions">
+            <button class="secondary" data-edit="${emp.id}">Düzenle</button>
+            <button class="secondary" data-del="${emp.id}">Sil</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('empCount').innerText = employees.length ? `${employees.length} personel` : 'Kayıt yok';
+      tbody.querySelectorAll('button[data-edit]').forEach(btn => btn.onclick = () => startEditEmployee(btn.dataset.edit));
+      tbody.querySelectorAll('button[data-del]').forEach(btn => btn.onclick = () => deleteEmployee(btn.dataset.del));
+    }
+
+    function startEditEmployee(id) {
+      const emp = employees.find(e => e.id === id);
+      if (!emp) return;
+      document.getElementById('empName').value = emp.name;
+      document.getElementById('empCode').value = emp.code;
+      document.getElementById('empDept').value = emp.department || '';
+      document.getElementById('empPos').value = emp.position || '';
+      document.getElementById('empStart').value = emp.startDate || '';
+      document.getElementById('empWorkType').value = emp.workType || '';
+      document.getElementById('empRate').value = emp.hourlyRate || '';
+      document.getElementById('editingId').value = id;
+      document.getElementById('empSubmit').innerText = 'Güncelle';
+      document.getElementById('empCancel').classList.remove('hidden');
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+
+    function resetEmployeeForm() {
+      document.getElementById('employeeForm').reset();
+      document.getElementById('editingId').value = '';
+      document.getElementById('empSubmit').innerText = 'Ekle';
+      document.getElementById('empCancel').classList.add('hidden');
+    }
+
+    document.getElementById('employeeForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const name = document.getElementById('empName').value.trim();
+      const code = document.getElementById('empCode').value.trim();
+      if (!name || !code) { showMessage('Lütfen Ad Soyad ve Personel Kodu alanlarını doldurun.', 'error'); return; }
+      const payload = {
+        id: document.getElementById('editingId').value || crypto.randomUUID(),
+        name,
+        code,
+        department: document.getElementById('empDept').value.trim(),
+        position: document.getElementById('empPos').value.trim(),
+        startDate: document.getElementById('empStart').value,
+        workType: document.getElementById('empWorkType').value.trim(),
+        hourlyRate: parseFloat(document.getElementById('empRate').value) || 0
+      };
+      const existingIndex = employees.findIndex(e => e.id === payload.id);
+      if (existingIndex >= 0) { employees[existingIndex] = payload; showMessage('Personel güncellendi.', 'success'); }
+      else { employees.push(payload); showMessage('Personel eklendi.', 'success'); }
+      saveEmployees();
+      renderEmployees();
+      populateAttSelectors();
+      populateReportSelectors();
+      resetEmployeeForm();
+    });
+
+    document.getElementById('empCancel').addEventListener('click', () => resetEmployeeForm());
+
+    function deleteEmployee(id) {
+      const emp = employees.find(e => e.id === id);
+      if (!emp) return;
+      const proceed = confirm('Bu personeli silmek istediğinize emin misiniz? İlgili puantaj kayıtları saklanacaktır.');
+      if (!proceed) return;
+      employees = employees.filter(e => e.id !== id);
+      saveEmployees();
+      renderEmployees();
+      populateAttSelectors();
+      populateReportSelectors();
+      showMessage('Personel silindi.', 'success');
+    }
+
+    function populateAttSelectors() {
+      const empSelect = document.getElementById('attEmployee');
+      empSelect.innerHTML = employees.length ? '' : '<option>Personel yok</option>';
+      employees.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id; opt.textContent = `${e.name} (${e.code})`;
+        empSelect.appendChild(opt);
+      });
+      if (!document.getElementById('attMonth').value) {
+        const today = new Date();
+        document.getElementById('attMonth').value = today.toISOString().slice(0,7);
+      }
+    }
+
+    function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
+
+    function buildAttendanceRows(monthStr, empId) {
+      const tbody = document.getElementById('attTableBody');
+      tbody.innerHTML = '';
+      const days = daysInMonth(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]));
+      const existing = (attendance[empId] && attendance[empId][monthStr]) ? attendance[empId][monthStr] : [];
+      for (let d=1; d<=days; d++) {
+        const date = `${monthStr}-${String(d).padStart(2,'0')}`;
+        const record = existing.find(r => r.date === date) || {};
+        const dow = new Date(date).getDay();
+        const tr = document.createElement('tr');
+        if (dow === 0) tr.classList.add('weekend-sun');
+        if (dow === 6) tr.classList.add('weekend-sat');
+        tr.innerHTML = `
+          <td>${String(d).padStart(2,'0')}</td>
+          <td><input type="time" data-field="start" value="${record.start || ''}"></td>
+          <td><input type="time" data-field="end" value="${record.end || ''}"></td>
+          <td><input type="number" step="0.1" data-field="hours" value="${record.hours || ''}" placeholder="Saat"></td>
+          <td>
+            <select data-field="overtimeType">
+              ${['','Normal','Fazla Mesai','Gece Mesaisi','Hafta Sonu Mesaisi','Resmî Tatil Mesaisi'].map(opt=>`<option ${record.overtimeType===opt?'selected':''}>${opt}</option>`).join('')}
+            </select>
+          </td>
+          <td>
+            <select data-field="leaveType">
+              ${['','Yıllık İzin','Ücretsiz İzin','Hastalık Raporu','Eksik Gün','Görevli'].map(opt=>`<option ${record.leaveType===opt?'selected':''}>${opt}</option>`).join('')}
+            </select>
+          </td>
+          <td><input type="text" data-field="note" value="${record.note || ''}"></td>`;
+        tr.dataset.date = date;
+        tbody.appendChild(tr);
+        const startInput = tr.querySelector('input[data-field="start"]');
+        const endInput = tr.querySelector('input[data-field="end"]');
+        const hoursInput = tr.querySelector('input[data-field="hours"]');
+        [startInput, endInput].forEach(inp => inp.addEventListener('change', () => {
+          if (startInput.value && endInput.value) {
+            const diff = calcHours(startInput.value, endInput.value);
+            hoursInput.value = diff;
+          }
+        }));
+      }
+      document.getElementById('attCard').style.display = 'block';
+    }
+
+    function calcHours(start, end) {
+      const [sh, sm] = start.split(':').map(Number);
+      const [eh, em] = end.split(':').map(Number);
+      let mins = (eh*60+em) - (sh*60+sm);
+      if (mins < 0) mins += 24*60;
+      return Math.round((mins/60)*10)/10;
+    }
+
+    document.getElementById('attLoad').addEventListener('click', () => {
+      const month = document.getElementById('attMonth').value;
+      const empId = document.getElementById('attEmployee').value;
+      if (!month || !empId) { showMessage('Lütfen ay ve personel seçin.', 'error'); return; }
+      buildAttendanceRows(month, empId);
+    });
+
+    document.getElementById('attCopyPrev').addEventListener('click', () => {
+      const tbody = document.getElementById('attTableBody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      for (let i=rows.length-1; i>0; i--) {
+        const prev = rows[i-1];
+        const curr = rows[i];
+        curr.querySelectorAll('input, select').forEach((el, idx) => {
+          const prevEl = prev.querySelectorAll('input, select')[idx];
+          if (prevEl && !el.value) el.value = prevEl.value;
+        });
+      }
+      showMessage('Boş günler için bir önceki gün değerleri kopyalandı.', 'success');
+    });
+
+    document.getElementById('attSave').addEventListener('click', () => {
+      const month = document.getElementById('attMonth').value;
+      const empId = document.getElementById('attEmployee').value;
+      if (!month || !empId) { showMessage('Lütfen ay ve personel seçin.', 'error'); return; }
+      const rows = document.querySelectorAll('#attTableBody tr');
+      const records = [];
+      rows.forEach(r => {
+        const date = r.dataset.date;
+        const start = r.querySelector('[data-field="start"]').value;
+        const end = r.querySelector('[data-field="end"]').value;
+        const hours = parseFloat(r.querySelector('[data-field="hours"]').value) || '';
+        const overtimeType = r.querySelector('[data-field="overtimeType"]').value;
+        const leaveType = r.querySelector('[data-field="leaveType"]').value;
+        const note = r.querySelector('[data-field="note"]').value;
+        if (start || end || hours || overtimeType || leaveType || note) {
+          records.push({ date, start, end, hours: hours===''?null:hours, overtimeType, leaveType, note });
+        }
+      });
+      if (!attendance[empId]) attendance[empId] = {};
+      attendance[empId][month] = records;
+      saveAttendance();
+      showMessage('Puantaj kaydedildi.', 'success');
+    });
+
+    function populateReportSelectors() {
+      const select = document.getElementById('reportEmployee');
+      select.innerHTML = '<option value="all">Tüm Personeller</option>';
+      employees.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id; opt.textContent = `${e.name} (${e.code})`;
+        select.appendChild(opt);
+      });
+      document.getElementById('reportMonth').value ||= new Date().toISOString().slice(0,7);
+    }
+
+    document.getElementById('reportType').addEventListener('change', toggleReportFields);
+    function toggleReportFields() {
+      const type = document.getElementById('reportType').value;
+      document.querySelectorAll('.monthly-only').forEach(el => el.style.display = type==='monthly' ? 'block':'none');
+      document.querySelectorAll('.dept-only').forEach(el => el.style.display = type==='dept' ? 'block':'none');
+    }
+
+    document.getElementById('reportGenerate').addEventListener('click', () => {
+      const type = document.getElementById('reportType').value;
+      if (type === 'monthly') generateMonthlyReport();
+      else generateDeptReport();
+    });
+
+    document.getElementById('reportCopy').addEventListener('click', () => {
+      const table = document.querySelector('#reportResult table');
+      if (!table) { showMessage('Kopyalanacak rapor yok.', 'error'); return; }
+      let text = '';
+      Array.from(table.rows).forEach(row => {
+        const cells = Array.from(row.cells).map(c => c.innerText);
+        text += cells.join('\t') + '\n';
+      });
+      navigator.clipboard.writeText(text).then(()=>showMessage('Rapor panoya kopyalandı.', 'success'));
+    });
+
+    document.getElementById('reportPrint').addEventListener('click', () => window.print());
+
+    function generateMonthlyReport() {
+      const month = document.getElementById('reportMonth').value;
+      const empId = document.getElementById('reportEmployee').value;
+      if (!month || !empId || empId==='all') { showMessage('Lütfen belirli bir personel ve ay seçin.', 'error'); return; }
+      const emp = employees.find(e => e.id === empId);
+      const recs = attendance[empId]?.[month] || [];
+      const days = daysInMonth(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]));
+      let html = `<h4>${emp.name} (${emp.code}) - ${month}</h4>`;
+      html += '<table><thead><tr><th>Tarih</th><th>Giriş</th><th>Çıkış</th><th>Toplam Saat</th><th>Mesai Türü</th><th>İzin/Devamsızlık</th><th>Not</th></tr></thead><tbody>';
+      let totals = { normal:0, fazla:0, gece:0, haftaSonu:0, resmi:0, izin:0, hastalik:0 };
+      for (let d=1; d<=days; d++) {
+        const date = `${month}-${String(d).padStart(2,'0')}`;
+        const r = recs.find(x=>x.date===date) || {};
+        const hours = r.hours || '';
+        if (r.overtimeType === 'Fazla Mesai') totals.fazla += +hours || 0;
+        else if (r.overtimeType === 'Gece Mesaisi') totals.gece += +hours || 0;
+        else if (r.overtimeType === 'Hafta Sonu Mesaisi') totals.haftaSonu += +hours || 0;
+        else if (r.overtimeType === 'Resmî Tatil Mesaisi') totals.resmi += +hours || 0;
+        else totals.normal += +hours || 0;
+        if (r.leaveType === 'Yıllık İzin') totals.izin += 1;
+        if (r.leaveType === 'Hastalık Raporu') totals.hastalik += 1;
+        html += `<tr><td>${date}</td><td>${r.start||''}</td><td>${r.end||''}</td><td>${hours}</td><td>${r.overtimeType||''}</td><td>${r.leaveType||''}</td><td>${r.note||''}</td></tr>`;
+      }
+      html += '</tbody></table>';
+      html += `<div class="pill">Toplam Normal Saat: ${totals.normal.toFixed(1)}</div>`;
+      html += `<div class="pill">Fazla Mesai: ${totals.fazla.toFixed(1)}</div>`;
+      html += `<div class="pill">Gece Mesaisi: ${totals.gece.toFixed(1)}</div>`;
+      html += `<div class="pill">Hafta Sonu Mesaisi: ${totals.haftaSonu.toFixed(1)}</div>`;
+      html += `<div class="pill">Resmî Tatil Mesaisi: ${totals.resmi.toFixed(1)}</div>`;
+      html += `<div class="pill">Yıllık İzin Günü: ${totals.izin}</div>`;
+      html += `<div class="pill">Hastalık Raporu Günü: ${totals.hastalik}</div>`;
+      document.getElementById('reportResult').innerHTML = html;
+    }
+
+    function generateDeptReport() {
+      const dept = document.getElementById('reportDept').value.trim();
+      const start = document.getElementById('reportStart').value;
+      const end = document.getElementById('reportEnd').value;
+      const leaveFilter = document.getElementById('reportLeave').value;
+      if (!start || !end) { showMessage('Lütfen tarih aralığını belirtin.', 'error'); return; }
+      const rows = [];
+      employees.filter(e => !dept || (e.department||'').toLowerCase().includes(dept.toLowerCase())).forEach(emp => {
+        let totalHours = 0, overtime = 0, leaveDays = 0;
+        const empAtt = attendance[emp.id] || {};
+        Object.entries(empAtt).forEach(([month, recs]) => {
+          recs.forEach(r => {
+            if (r.date >= start && r.date <= end) {
+              const hrs = +r.hours || 0;
+              totalHours += hrs;
+              if (r.overtimeType && r.overtimeType !== 'Normal') overtime += hrs;
+              if (leaveFilter ? r.leaveType === leaveFilter : r.leaveType) leaveDays += 1;
+            }
+          });
+        });
+        rows.push({emp, totalHours, overtime, leaveDays});
+      });
+      let html = '<table><thead><tr><th>Ad Soyad</th><th>Toplam Saat</th><th>Toplam Fazla Mesai</th><th>İzin Günü</th></tr></thead><tbody>';
+      rows.forEach(r => {
+        html += `<tr><td>${r.emp.name}</td><td>${r.totalHours.toFixed(1)}</td><td>${r.overtime.toFixed(1)}</td><td>${r.leaveDays}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('reportResult').innerHTML = html;
+    }
+
+    function renderWorkdays() {
+      const container = document.getElementById('workdays');
+      const days = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
+      container.innerHTML = '';
+      days.forEach((d, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = d;
+        btn.className = settings.workdays?.includes(idx) ? 'btn-primary' : 'secondary';
+        btn.onclick = () => {
+          settings.workdays = settings.workdays || [];
+          if (settings.workdays.includes(idx)) settings.workdays = settings.workdays.filter(x=>x!==idx);
+          else settings.workdays.push(idx);
+          renderWorkdays();
+        };
+        container.appendChild(btn);
+      });
+      document.getElementById('normalHours').value = settings.normalHours || 8;
+      document.getElementById('nightStart').value = settings.nightStart || '22:00';
+      document.getElementById('nightEnd').value = settings.nightEnd || '06:00';
+    }
+
+    document.getElementById('settingsForm').addEventListener('submit', e => {
+      e.preventDefault();
+      settings.normalHours = parseFloat(document.getElementById('normalHours').value) || 8;
+      settings.nightStart = document.getElementById('nightStart').value || '22:00';
+      settings.nightEnd = document.getElementById('nightEnd').value || '06:00';
+      const pass = document.getElementById('adminPassword').value;
+      if (pass) settings.password = btoa(pass);
+      saveSettings();
+      renderWorkdays();
+      showMessage('Ayarlar kaydedildi.', 'success');
+    });
+
+    function backupData() {
+      const data = { employees, attendance, settings };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0,10);
+      a.href = url; a.download = `puantaj_yedek_${today}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showMessage('Yedek dosyası indirildi.', 'success');
+    }
+
+    function restoreData(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.employees || !data.attendance || !data.settings) throw new Error('Eksik veri');
+          employees = data.employees;
+          attendance = data.attendance;
+          settings = data.settings;
+          saveEmployees(); saveAttendance(); saveSettings();
+          renderEmployees();
+          populateAttSelectors();
+          renderWorkdays();
+          populateReportSelectors();
+          showMessage('Yedek başarıyla yüklendi.', 'success');
+        } catch (err) {
+          showMessage('Geçersiz JSON dosyası.', 'error');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    document.getElementById('backupBtn').addEventListener('click', backupData);
+    document.getElementById('restoreBtn').addEventListener('click', () => {
+      const file = document.getElementById('restoreFile').files[0];
+      if (!file) { showMessage('Lütfen bir yedek dosyası seçin.', 'error'); return; }
+      restoreData(file);
+    });
+
+    function checkLogin() {
+      if (!settings.password) return;
+      document.getElementById('loginOverlay').classList.remove('hidden');
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', () => {
+      const val = document.getElementById('loginPass').value;
+      if (btoa(val) === settings.password) {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('loginPass').value = '';
+        document.getElementById('loginMsg').innerText = '';
+      } else {
+        document.getElementById('loginMsg').innerText = 'Hatalı şifre';
+      }
+    });
+    document.getElementById('loginCancel').addEventListener('click', () => {
+      document.getElementById('loginPass').value='';
+      document.getElementById('loginMsg').innerText='';
+    });
+
+    function init() {
+      renderNav();
+      renderEmployees();
+      populateAttSelectors();
+      populateReportSelectors();
+      renderWorkdays();
+      toggleReportFields();
+      checkLogin();
+    }
+
+    init();
+  </script>
+</body>
+</html>
