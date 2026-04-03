@@ -961,7 +961,7 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
 
         .ts-present { background: #ecfdf5; color: #059669; }
         .ts-absent { background: #fef2f2; color: #dc2626; }
-        .ts-leave { background: #eff6ff; color: #2563eb; }
+        .ts-leave { background: #ffedd5; color: #c2410c; border: 1px solid #fdba74; }
         .ts-sick { background: #fffbeb; color: #d97706; }
         .ts-holiday { background: #f1f5f9; color: #475569; }
         .ts-half_day { background: #f5f3ff; color: #7c3aed; }
@@ -1552,7 +1552,7 @@ elseif ($page === 'timesheet'):
 <div class="table-card p-3 d-flex flex-wrap gap-2" style="font-size:.75rem">
         <span><span class="badge bg-success">✓</span> Mevcut</span>
         <span><span class="badge bg-danger">✗</span> Devamsız</span>
-        <span><span class="badge bg-info">İ</span> İzinli</span>
+        <span><span class="badge bg-orange">İ</span> İzinli</span>
         <span><span class="badge bg-warning text-dark">H</span> Hasta</span>
         <span><span class="badge bg-secondary">T</span> Tatil</span>
         <span><span class="badge bg-primary">½</span> Yarım Gün</span>
@@ -2439,7 +2439,7 @@ elseif ($page === 'my_timesheet' && !isAdmin()):
 <div class="table-card p-3 d-flex flex-wrap gap-2 mt-3" style="font-size:.75rem">
     <span><span class="badge bg-success">✓</span> Mevcut</span>
     <span><span class="badge bg-danger">✗</span> Devamsız</span>
-    <span><span class="badge bg-info">İ</span> İzinli</span>
+    <span><span class="badge bg-orange">İ</span> İzinli</span>
     <span><span class="badge bg-warning text-dark">H</span> Hasta</span>
     <span><span class="badge bg-secondary">T</span> Tatil</span>
     <span><span class="badge bg-primary">½</span> Yarım Gün</span>
