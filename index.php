@@ -30,13 +30,14 @@ try {
     die('<div style="text-align:center;padding:50px;font-family:sans-serif;"><h2>Veritabanı Bağlantı Hatası</h2><p>'.htmlspecialchars($e->getMessage()).'</p></div>');
 }
 
-// Admin şifresi hash kontrolü
-$stmt = $pdo->prepare("SELECT password FROM users WHERE username = 'admin'");
-$stmt->execute();
-$ar = $stmt->fetch();
-if ($ar && !password_verify('Aeg151851', $ar['password'])) {
-    $pdo->prepare("UPDATE users SET password = ? WHERE username = 'admin'")->execute([password_hash('Aeg151851', PASSWORD_DEFAULT)]);
-}
+// Global ayarlar önbelleği
+$allSettings = [];
+try {
+    $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings");
+    while ($row = $stmt->fetch()) {
+        $allSettings[$row['setting_key']] = $row['setting_value'];
+    }
+} catch (Exception $e) {}
 
 // =====================================================
 // YARDIMCI FONKSİYONLAR
@@ -48,7 +49,7 @@ function redirect($p) { header("Location: ?page=$p"); exit; }
 function sanitize($s) { return htmlspecialchars(trim($s ?? ''), ENT_QUOTES, 'UTF-8'); }
 function setFlash($t, $m) { $_SESSION['flash'] = ['type'=>$t, 'message'=>$m]; }
 function getFlash() { if (isset($_SESSION['flash'])) { $f=$_SESSION['flash']; unset($_SESSION['flash']); return $f; } return null; }
-function getSetting($k, $d='') { global $pdo; $s=$pdo->prepare("SELECT setting_value FROM settings WHERE setting_key=?"); $s->execute([$k]); $r=$s->fetch(); return $r ? $r['setting_value'] : $d; }
+function getSetting($k, $d='') { global $allSettings; return $allSettings[$k] ?? $d; }
 function formatDate($d) { return $d ? date('d.m.Y', strtotime($d)) : '-'; }
 function formatTime($t) { return $t ? date('H:i', strtotime($t)) : '-'; }
 
@@ -107,16 +108,24 @@ function calcWorkHours($start, $end, $brk = 0) {
  */
 function getCycleDayIndex($dateStr) {
     global $pdo;
-    $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
-    $row = $stmt->fetch();
-    $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+    static $indexCache = [];
+    if (isset($indexCache[$dateStr])) return $indexCache[$dateStr];
+
+    static $cycleStartDateObj = null;
+    if ($cycleStartDateObj === null) {
+        $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
+        $row = $stmt->fetch();
+        $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+        $cycleStartDateObj = new DateTime($cycleStart);
+    }
     
-    $start = new DateTime($cycleStart);
     $target = new DateTime($dateStr);
-    $diff = (int)$start->diff($target)->format('%r%a');
+    $diff = (int)$cycleStartDateObj->diff($target)->format('%r%a');
     $cycleLen = 28; // 4 hafta
     $index = $diff % $cycleLen;
     if ($index < 0) $index += $cycleLen;
+
+    $indexCache[$dateStr] = $index;
     return $index;
 }
 
@@ -129,9 +138,12 @@ function getCycleDayIndex($dateStr) {
 function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache = null) {
     global $pdo;
     
-    $defStart = getSetting('work_start_time', '08:00');
-    $defEnd = getSetting('work_end_time', '17:00');
-    $defBreak = (int)getSetting('break_duration', '60');
+    static $defStart = null, $defEnd = null, $defBreak = null;
+    if ($defStart === null) {
+        $defStart = getSetting('work_start_time', '08:00');
+        $defEnd = getSetting('work_end_time', '17:00');
+        $defBreak = (int)getSetting('break_duration', '60');
+    }
     
     // 1. Manuel kayıt kontrolü
     if ($recordsCache !== null && isset($recordsCache[$userId][$dateStr])) {
@@ -230,6 +242,7 @@ function ensureTemplate($userId) {
     $user = $stmt->fetch();
     $unitId = $user['unit_id'] ?? null;
     
+    $stmt = $pdo->prepare("INSERT IGNORE INTO work_templates (user_id, day_index, unit_id, start_time, end_time, break_minutes, status) VALUES (?,?,?,?,?,?,?)");
     for ($i = 0; $i < 28; $i++) {
         $weekDay = ($i % 7); // 0=Pazartesi(döngü başı), ... 5=Cumartesi, 6=Pazar
         $isWeekend = ($weekDay >= 5);
@@ -238,8 +251,7 @@ function ensureTemplate($userId) {
         $end = $isWeekend ? null : $defEnd;
         $brk = $isWeekend ? 0 : $defBreak;
         
-        $pdo->prepare("INSERT IGNORE INTO work_templates (user_id, day_index, unit_id, start_time, end_time, break_minutes, status) VALUES (?,?,?,?,?,?,?)")
-            ->execute([$userId, $i, $unitId, $start, $end, $brk, $status]);
+        $stmt->execute([$userId, $i, $unitId, $start, $end, $brk, $status]);
     }
 }
 
@@ -870,41 +882,66 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: <?=$themeColor?>; --primary-dark: <?=$themeColor?>dd; --sidebar-width: 270px; }
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --sidebar-width: 270px;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-400: #94a3b8;
+            --slate-500: #64748b;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+        }
         * { font-family: 'Inter', sans-serif; }
-        body { background: #f0f2f5; min-height: 100vh; }
-        .sidebar { position:fixed; top:0; bottom:0; left:0; width:var(--sidebar-width); background:linear-gradient(180deg,#1e293b,#0f172a); color:#fff; z-index:1040; transition:transform .3s; overflow-y:auto; padding-bottom:3rem; }
-        .sidebar .brand { padding:1.25rem; border-bottom:1px solid rgba(255,255,255,.1); text-align:center; }
-        .sidebar .brand h4 { margin:0; font-weight:700; font-size:1rem; }
-        .sidebar .brand small { color:rgba(255,255,255,.5); font-size:.7rem; }
-        .sidebar-nav { padding:.75rem 0; }
-        .sidebar-nav .nav-label { padding:.4rem 1.25rem; font-size:.65rem; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,.35); font-weight:600; }
-        .sidebar-nav a { display:flex; align-items:center; padding:.55rem 1.25rem; color:rgba(255,255,255,.65); text-decoration:none; font-size:.85rem; transition:all .2s; border-left:3px solid transparent; }
-        .sidebar-nav a:hover, .sidebar-nav a.active { background:rgba(255,255,255,.08); color:#fff; border-left-color:var(--primary); }
-        .sidebar-nav a i { width:22px; margin-right:10px; font-size:1rem; }
+        body { background: var(--slate-50); color: var(--slate-900); min-height: 100vh; }
+
+        .sidebar { position:fixed; top:0; bottom:0; left:0; width:var(--sidebar-width); background: var(--slate-900); color:#fff; z-index:1040; transition:transform .3s; overflow-y:auto; padding-bottom:3rem; border-right: 1px solid var(--slate-800); }
+        .sidebar .brand { padding:1.5rem; border-bottom:1px solid var(--slate-800); text-align:left; display: flex; align-items: center; gap: 10px; }
+        .sidebar .brand h4 { margin:0; font-weight:700; font-size:1.1rem; color: #fff; letter-spacing: -0.5px; }
+        .sidebar .brand small { color: var(--slate-400); font-size:.7rem; display: block; }
+
+        .sidebar-nav { padding:1rem 0.75rem; }
+        .sidebar-nav .nav-label { padding:.75rem 0.75rem .4rem; font-size:.65rem; text-transform:uppercase; letter-spacing:1px; color: var(--slate-500); font-weight:700; }
+        .sidebar-nav a { display:flex; align-items:center; padding:.65rem .75rem; color: var(--slate-400); text-decoration:none; font-size:.875rem; transition:all .2s; border-radius: 8px; margin-bottom: 2px; }
+        .sidebar-nav a:hover { background: var(--slate-800); color:#fff; }
+        .sidebar-nav a.active { background: var(--primary); color:#fff; font-weight: 500; }
+        .sidebar-nav a i { width:22px; margin-right:12px; font-size:1.1rem; }
+
         .main-content { margin-left:var(--sidebar-width); transition:margin-left .3s; }
-        .top-nav { background:#fff; padding:.6rem 1.25rem; box-shadow:0 1px 3px rgba(0,0,0,.08); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:1030; }
-        .top-nav .btn-sidebar-toggle { display:none; border:none; background:none; font-size:1.3rem; color:#333; cursor:pointer; }
-        .page-content { padding:1.25rem; }
-        .stat-card { background:#fff; border-radius:12px; padding:1.25rem; box-shadow:0 1px 3px rgba(0,0,0,.08); transition:transform .2s; }
-        .stat-card:hover { transform:translateY(-2px); }
-        .stat-card .stat-icon { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#fff; }
-        .stat-card .stat-value { font-size:1.6rem; font-weight:700; color:#1e293b; }
-        .stat-card .stat-label { font-size:.8rem; color:#64748b; }
-        .table-card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
-        .table-card .card-header { background:#fff; border-bottom:1px solid #e2e8f0; padding:.85rem 1.25rem; }
-        .table th { background:#f8fafc; font-weight:600; font-size:.75rem; text-transform:uppercase; letter-spacing:.5px; color:#64748b; }
-        .table td { vertical-align:middle; font-size:.85rem; }
-        .badge { font-weight:500; padding:.3rem .55rem; font-size:.72rem; }
-        .auth-page { min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#667eea,#764ba2); padding:1rem; }
-        .auth-card { background:#fff; border-radius:16px; padding:2rem; width:100%; max-width:480px; box-shadow:0 25px 50px rgba(0,0,0,.15); }
-        .auth-card h2 { font-weight:700; color:#1e293b; }
-        .sidebar-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.5); z-index:1035; }
-        .form-label { font-weight:500; font-size:.82rem; color:#374151; }
-        .form-control,.form-select { border-radius:8px; border:1px solid #d1d5db; padding:.5rem .75rem; font-size:.85rem; }
-        .form-control:focus,.form-select:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
-        .btn-primary { background:var(--primary); border-color:var(--primary); border-radius:8px; font-weight:500; }
-        .btn-primary:hover { background:var(--primary-dark); border-color:var(--primary-dark); }
+        .top-nav { background:#fff; padding:.75rem 1.5rem; border-bottom: 1px solid var(--slate-200); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:1030; }
+        .top-nav .btn-sidebar-toggle { display:none; border:none; background:none; font-size:1.3rem; color: var(--slate-600); cursor:pointer; }
+
+        .page-content { padding:1.5rem; max-width: 1600px; margin: 0 auto; }
+
+        .stat-card { background:#fff; border-radius:12px; padding:1.5rem; border: 1px solid var(--slate-200); transition:all .2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .stat-card:hover { transform:translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: var(--slate-300); }
+        .stat-card .stat-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.25rem; color:#fff; margin-bottom: 1rem; }
+        .stat-card .stat-value { font-size:1.75rem; font-weight:700; color: var(--slate-900); line-height: 1; }
+        .stat-card .stat-label { font-size:.875rem; color: var(--slate-500); font-weight: 500; margin-top: 0.5rem; }
+
+        .table-card { background:#fff; border-radius:12px; border: 1px solid var(--slate-200); overflow:hidden; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        .table-card .card-header { background:#fff; border-bottom:1px solid var(--slate-200); padding:1rem 1.25rem; display: flex; align-items: center; justify-content: space-between; }
+        .table th { background: var(--slate-50); font-weight:600; font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color: var(--slate-500); border-top: none; }
+        .table td { vertical-align:middle; font-size:.875rem; color: var(--slate-700); padding: 0.75rem 1.25rem; }
+
+        .badge { font-weight:600; padding:.35rem .65rem; font-size:.75rem; border-radius: 6px; }
+        .auth-page { min-height:100vh; display:flex; align-items:center; justify-content:center; background: var(--slate-900); padding:1rem; position: relative; overflow: hidden; }
+        .auth-page::before { content: ""; position: absolute; width: 100%; height: 100%; background: radial-gradient(circle at 50% 50%, rgba(79, 70, 229, 0.15) 0%, transparent 50%); }
+        .auth-card { background:#fff; border-radius:20px; padding:2.5rem; width:100%; max-width:440px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); position: relative; z-index: 1; }
+        .auth-card h2 { font-weight:800; color: var(--slate-900); letter-spacing: -1px; }
+
+        .form-label { font-weight:600; font-size:.875rem; color: var(--slate-700); margin-bottom: 0.5rem; }
+        .form-control, .form-select { border-radius:10px; border:1px solid var(--slate-300); padding:.6rem .8rem; font-size:.9rem; transition: all 0.2s; }
+        .form-control:focus, .form-select:focus { border-color:var(--primary); box-shadow:0 0 0 4px rgba(79, 70, 229, 0.1); outline: none; }
+
+        .btn { border-radius:10px; font-weight:600; padding: .6rem 1.25rem; transition: all 0.2s; }
+        .btn-primary { background:var(--primary); border-color:var(--primary); color: #fff; }
+        .btn-primary:hover { background:var(--primary-dark); border-color:var(--primary-dark); transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .user-avatar { width:34px; height:34px; border-radius:50%; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:.8rem; }
         .timesheet-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
         @media (max-width:991.98px) {
@@ -919,23 +956,23 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
         .sidebar::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:2px; }
 
         /* Puantaj hücreleri */
-        .ts-cell { width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:.7rem; font-weight:600; cursor:pointer; margin:auto; transition:all .15s; }
-        .ts-cell:hover { transform:scale(1.15); box-shadow:0 2px 8px rgba(0,0,0,.15); }
-        .ts-present { background:#dcfce7; color:#166534; }
-        .ts-absent { background:#fecaca; color:#991b1b; }
-        .ts-leave { background:#f97316; color:#fff; }
-        .ts-sick { background:#fef3c7; color:#92400e; }
-        .ts-holiday { background:#e2e8f0; color:#475569; }
-        .ts-half_day { background:#dbeafe; color:#1e40af; }
-        .ts-override { border:2px solid #f97316; }
+        .ts-cell { width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-size:.75rem; font-weight:700; cursor:pointer; margin:auto; transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid transparent; }
+        .ts-cell:hover { transform: scale(1.1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); z-index: 10; border-color: rgba(0,0,0,0.1); }
 
-        /* Custom Orange Utilities */
+        .ts-present { background: #ecfdf5; color: #059669; }
+        .ts-absent { background: #fef2f2; color: #dc2626; }
+        .ts-leave { background: #eff6ff; color: #2563eb; }
+        .ts-sick { background: #fffbeb; color: #d97706; }
+        .ts-holiday { background: #f1f5f9; color: #475569; }
+        .ts-half_day { background: #f5f3ff; color: #7c3aed; }
+        .ts-override { border: 2px solid #f59e0b !important; }
+
         .bg-orange { background-color: #f97316 !important; color: #fff !important; }
-        .bg-orange.bg-opacity-25 { background-color: rgba(249, 115, 22, 0.25) !important; color: inherit !important; }
+        .bg-orange.bg-opacity-25 { background-color: rgba(249, 115, 22, 0.1) !important; color: inherit !important; }
 
         /* Mobile Timesheet Styles */
-        .mobile-ts-card { background:#fff; border-radius:12px; margin-bottom:1rem; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; border:1px solid #e2e8f0; }
-        .mobile-ts-card .card-header { background:#f8fafc; padding:.75rem 1rem; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; }
+        .mobile-ts-card { background:#fff; border-radius:16px; margin-bottom:1.25rem; border: 1px solid var(--slate-200); overflow:hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+        .mobile-ts-card .card-header { background: var(--slate-50); padding:1rem 1.25rem; border-bottom:1px solid var(--slate-200); display:flex; justify-content:space-between; align-items:center; }
         .mobile-ts-card .card-body { padding:1rem; }
         .mobile-ts-week { margin-bottom:1rem; }
         .mobile-ts-week:last-child { margin-bottom:0; }
@@ -965,7 +1002,7 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
             <h2 class="mt-2"><?= sanitize($pageTitle) ?></h2>
             <p class="text-muted mb-0"><?= sanitize($companyName) ?></p>
         </div>
-        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><small><?=$fl['message']?></small><button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button></div><?php endif; ?>
+        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><small><?=sanitize($fl['message'])?></small><button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button></div><?php endif; ?>
         <form method="post">
             <input type="hidden" name="action" value="login">
             <div class="mb-3"><label class="form-label">Kullanıcı Adı</label><input type="text" name="username" class="form-control" required autofocus></div>
@@ -985,7 +1022,7 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
             <i class="bi bi-person-plus" style="font-size:2.5rem;color:var(--primary)"></i>
             <h2 class="mt-2">Kayıt Ol</h2>
         </div>
-        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><small><?=$fl['message']?></small><button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button></div><?php endif; ?>
+        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><small><?=sanitize($fl['message'])?></small><button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button></div><?php endif; ?>
         <form method="post">
             <input type="hidden" name="action" value="register">
             <div class="row g-2">
@@ -1012,8 +1049,13 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 <nav class="sidebar" id="sidebar">
     <div class="brand">
-        <h4><i class="bi bi-clock-history me-2"></i><?=sanitize($pageTitle)?></h4>
-        <small><?=sanitize($companyName)?></small>
+        <div style="background: var(--primary); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">
+            <i class="bi bi-clock-history"></i>
+        </div>
+        <div>
+            <h4><?=sanitize($pageTitle)?></h4>
+            <small><?=sanitize($companyName)?></small>
+        </div>
     </div>
     <div class="sidebar-nav">
         <div class="nav-label">Ana Menü</div>
@@ -1062,7 +1104,7 @@ $companyName = getSetting('company_name', 'Çeşme Belediyesi');
     </div>
 
     <div class="page-content">
-        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><i class="bi bi-<?=$fl['type']==='success'?'check-circle':'exclamation-triangle'?> me-2"></i><?=$fl['message']?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div><?php endif; ?>
+        <?php $fl=getFlash(); if($fl): ?><div class="alert alert-<?=$fl['type']?> alert-dismissible fade show"><i class="bi bi-<?=$fl['type']==='success'?'check-circle':'exclamation-triangle'?> me-2"></i><?=sanitize($fl['message'])?><button type="button" class="btn-close" data-bs-dismiss="alert"></button></div><?php endif; ?>
 
 <?php
 // =====================================================
@@ -1106,85 +1148,111 @@ if ($page === 'dashboard'):
 ?>
 
 <?php if (isAdmin()): ?>
-<div class="row g-3 mb-4">
+<div class="row g-4 mb-4">
     <div class="col-6 col-lg-3">
-        <div class="stat-card"><div class="stat-icon mb-2" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)"><i class="bi bi-people"></i></div>
-        <div class="stat-value"><?=$totalUsers?></div><div class="stat-label">Toplam Çalışan</div></div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: #4f46e5;"><i class="bi bi-people"></i></div>
+            <div class="stat-value"><?=$totalUsers?></div>
+            <div class="stat-label">Toplam Çalışan</div>
+        </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card"><div class="stat-icon mb-2" style="background:linear-gradient(135deg,#10b981,#059669)"><i class="bi bi-diagram-3"></i></div>
-        <div class="stat-value"><?=$totalUnits?></div><div class="stat-label">Aktif Birim</div></div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: #10b981;"><i class="bi bi-diagram-3"></i></div>
+            <div class="stat-value"><?=$totalUnits?></div>
+            <div class="stat-label">Aktif Birim</div>
+        </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card"><div class="stat-icon mb-2" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><i class="bi bi-hourglass"></i></div>
-        <div class="stat-value"><?=$pendingLeaves?></div><div class="stat-label">Bekleyen İzin</div></div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: #f59e0b;"><i class="bi bi-hourglass-split"></i></div>
+            <div class="stat-value"><?=$pendingLeaves?></div>
+            <div class="stat-label">Bekleyen İzin</div>
+        </div>
     </div>
     <div class="col-6 col-lg-3">
-        <div class="stat-card"><div class="stat-icon mb-2" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)"><i class="bi bi-pencil-square"></i></div>
-        <div class="stat-value"><?=$overrides?></div><div class="stat-label">Bugün Değişiklik</div></div>
+        <div class="stat-card">
+            <div class="stat-icon" style="background: #8b5cf6;"><i class="bi bi-pencil-square"></i></div>
+            <div class="stat-value"><?=$overrides?></div>
+            <div class="stat-label">Bugün Değişiklik</div>
+        </div>
     </div>
 </div>
 
 <div class="row g-3">
     <div class="col-lg-8">
         <div class="table-card">
-            <div class="card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-info-circle me-2"></i>Sistem Bilgisi</h6></div>
+            <div class="card-header">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-lightning-charge me-2 text-primary"></i>Hızlı İşlemler</h6>
+            </div>
             <div class="p-4">
-                <div class="alert alert-info mb-3">
-                    <i class="bi bi-arrow-repeat me-2"></i><strong>4 Haftalık Döngü Sistemi Aktif</strong><br>
-                    <small>Tüm çalışanlar varsayılan olarak <strong>hafta içi Mevcut</strong>, <strong>hafta sonu Tatil</strong> olarak işaretlenir. 
-                    Bu döngü her 4 haftada otomatik tekrar eder. Adminler istedikleri günü değiştirebilir.</small>
+                <div class="p-4 mb-4 rounded-4" style="background: var(--slate-50); border: 1px solid var(--slate-200);">
+                    <div class="d-flex align-items-center gap-3 mb-2">
+                        <div class="bg-primary bg-opacity-10 text-primary p-2 rounded-3">
+                            <i class="bi bi-arrow-repeat fs-4"></i>
+                        </div>
+                        <h6 class="mb-0 fw-bold">4 Haftalık Döngü Sistemi</h6>
+                    </div>
+                    <p class="text-muted small mb-0">Tüm çalışanlar varsayılan olarak hafta içi <strong>Mevcut</strong>, hafta sonu <strong>Tatil</strong> olarak işaretlenir. Bu döngü her 28 günde bir otomatik olarak kendini yeniler.</p>
                 </div>
-                <div class="row g-2">
-                    <div class="col-md-6"><a href="?page=timesheet" class="btn btn-outline-primary w-100"><i class="bi bi-table me-2"></i>Puantaj Tablosu</a></div>
-                    <div class="col-md-6"><a href="?page=templates" class="btn btn-outline-success w-100"><i class="bi bi-arrow-repeat me-2"></i>Şablonları Yönet</a></div>
-                    <div class="col-md-6"><a href="?page=bulk_entry" class="btn btn-outline-warning w-100"><i class="bi bi-pencil-square me-2"></i>Toplu Giriş</a></div>
-                    <div class="col-md-6"><a href="?page=leaves" class="btn btn-outline-info w-100"><i class="bi bi-calendar-check me-2"></i>İzin Yönetimi</a></div>
+                <div class="row g-3">
+                    <div class="col-md-6"><a href="?page=timesheet" class="btn btn-light w-100 py-3 border text-start d-flex align-items-center gap-3"><i class="bi bi-table text-primary fs-5"></i><div><div class="fw-bold">Puantaj Tablosu</div><small class="text-muted">Günlük ve aylık takip</small></div></a></div>
+                    <div class="col-md-6"><a href="?page=templates" class="btn btn-light w-100 py-3 border text-start d-flex align-items-center gap-3"><i class="bi bi-arrow-repeat text-success fs-5"></i><div><div class="fw-bold">Şablon Yönetimi</div><small class="text-muted">Döngü ayarlarını düzenle</small></div></a></div>
+                    <div class="col-md-6"><a href="?page=bulk_entry" class="btn btn-light w-100 py-3 border text-start d-flex align-items-center gap-3"><i class="bi bi-pencil-square text-warning fs-5"></i><div><div class="fw-bold">Toplu Giriş</div><small class="text-muted">Hızlı veri girişi</small></div></a></div>
+                    <div class="col-md-6"><a href="?page=leaves" class="btn btn-light w-100 py-3 border text-start d-flex align-items-center gap-3"><i class="bi bi-calendar-check text-info fs-5"></i><div><div class="fw-bold">İzin Yönetimi</div><small class="text-muted">Talep ve onaylar</small></div></a></div>
                 </div>
             </div>
         </div>
     </div>
     <div class="col-lg-4 d-flex flex-column gap-3">
         <div class="table-card">
-            <div class="card-header"><h6 class="mb-0 fw-bold">Bekleyen İzinler</h6></div>
+            <div class="card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-clock me-2"></i>Bekleyen İzinler</h6></div>
             <div class="p-3">
                 <?php $pl=$pdo->query("SELECT lr.*,u.full_name FROM leave_records lr LEFT JOIN users u ON lr.user_id=u.id WHERE lr.status='pending' ORDER BY lr.created_at DESC LIMIT 5")->fetchAll(); ?>
-                <?php if (empty($pl)): ?><p class="text-muted text-center py-3 mb-0" style="font-size: .85rem">Bekleyen izin yok</p>
+                <?php if (empty($pl)): ?><div class="text-center py-4"><i class="bi bi-check2-circle text-success fs-2 mb-2 d-block"></i><p class="text-muted small mb-0">Bekleyen izin talebi yok</p></div>
                 <?php else: foreach($pl as $l): ?>
-                    <div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8fafc">
-                        <div><div class="fw-medium" style="font-size:.82rem"><?=sanitize($l['full_name'])?></div><small class="text-muted"><?=getLeaveTypeText($l['leave_type'])?></small></div>
-                        <?=getStatusBadge($l['status'])?>
+                    <div class="p-3 mb-2 rounded-3 border" style="background: var(--slate-50)">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="fw-bold small"><?=sanitize($l['full_name'])?></span>
+                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem">BEKLEMEDE</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted"><?=getLeaveTypeText($l['leave_type'])?></small>
+                            <small class="text-muted"><?=formatDate($l['start_date'])?></small>
+                        </div>
                     </div>
-                <?php endforeach; endif; ?>
-            </div>
-        </div>
-
-        <div class="table-card">
-            <div class="card-header"><h6 class="mb-0 fw-bold text-info"><i class="bi bi-calendar2-x me-2"></i>Bugün İzinli Olanlar</h6></div>
-            <div class="p-3">
-                <?php if(empty($leavesToday)): ?>
-                    <p class="text-muted text-center py-2 mb-0" style="font-size: .85rem">Bugün izinli çalışan bulunmuyor.</p>
-                <?php else: ?>
-                    <ul class="list-unstyled mb-0" style="font-size: .85rem">
-                    <?php foreach($leavesToday as $emp): ?>
-                        <li class="border-bottom py-2 d-flex gap-2 align-items-center text-dark"><i class="bi bi-person text-muted"></i> <?=sanitize($emp['full_name'])?></li>
-                    <?php endforeach; ?>
-                    </ul>
+                <?php endforeach; ?>
+                    <div class="text-center mt-2"><a href="?page=leaves" class="btn btn-link btn-sm text-decoration-none">Tümünü Gör</a></div>
                 <?php endif; ?>
             </div>
         </div>
 
         <div class="table-card">
-            <div class="card-header"><h6 class="mb-0 fw-bold text-warning"><i class="bi bi-calendar3 me-2"></i>Yarın İzinli Olacaklar</h6></div>
+            <div class="card-header border-info-subtle bg-info-subtle"><h6 class="mb-0 fw-bold text-info-emphasis"><i class="bi bi-calendar-day me-2"></i>Bugün İzinli</h6></div>
+            <div class="p-3">
+                <?php if(empty($leavesToday)): ?>
+                    <p class="text-muted text-center py-2 mb-0 small">Aktif izin kaydı yok</p>
+                <?php else: ?>
+                    <div class="d-flex flex-wrap gap-2">
+                    <?php foreach($leavesToday as $emp): ?>
+                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle"><?=sanitize($emp['full_name'])?></span>
+                    <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <div class="card-header border-warning-subtle bg-warning-subtle"><h6 class="mb-0 fw-bold text-warning-emphasis"><i class="bi bi-calendar-event me-2"></i>Yarın İzinli</h6></div>
             <div class="p-3">
                 <?php if(empty($leavesTomorrow)): ?>
-                    <p class="text-muted text-center py-2 mb-0" style="font-size: .85rem">Yarın için izinli çalışan bulunmuyor.</p>
+                    <p class="text-muted text-center py-2 mb-0 small">Beklenen izin yok</p>
                 <?php else: ?>
-                    <ul class="list-unstyled mb-0" style="font-size: .85rem">
+                    <div class="d-flex flex-wrap gap-2">
                     <?php foreach($leavesTomorrow as $emp): ?>
-                        <li class="border-bottom py-2 d-flex gap-2 align-items-center text-dark"><i class="bi bi-person text-muted"></i> <?=sanitize($emp['full_name'])?></li>
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><?=sanitize($emp['full_name'])?></span>
                     <?php endforeach; ?>
-                    </ul>
+                    </div>
                 <?php endif; ?>
             </div>
         </div>
@@ -1316,10 +1384,10 @@ elseif ($page === 'timesheet'):
         <small class="text-muted"><i class="bi bi-arrow-repeat me-1"></i>4 haftalık döngü aktif<?=isAdmin()?' · Hücreler tıklanabilir':''?></small>
     </div>
     <div class="timesheet-scroll">
-        <table class="table table-bordered table-sm mb-0" style="font-size:.72rem;min-width:<?=180+$daysToDisplay*42?>px">
+        <table class="table table-hover table-bordered table-sm mb-0" style="font-size:.75rem;min-width:<?=180+$daysToDisplay*42?>px">
             <thead>
                 <tr>
-                    <th style="position:sticky;left:0;background:#f8fafc;z-index:10;min-width:140px">Çalışan</th>
+                    <th style="position:sticky;left:0;background:var(--slate-50);z-index:10;min-width:160px; border-right: 2px solid var(--slate-200);">Çalışan</th>
                     <?php for($d=1;$d<=$daysToDisplay;$d++):
                         if ($viewType === 'monthly') {
                             $ds = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $d);
@@ -1332,11 +1400,11 @@ elseif ($page === 'timesheet'):
                         $isWe = in_array(date('N', strtotime($ds)), [6, 7]);
                         $isH = in_array($ds, $holidays);
                     ?>
-                        <th class="text-center <?=($isWe||$isH)?'bg-danger bg-opacity-10':''?>" style="min-width:38px;padding:2px">
-                            <div><?=$dayNum?></div><div style="font-size:.55rem;font-weight:400"><?=$dn?></div>
+                        <th class="text-center <?=($isWe||$isH)?'bg-danger-subtle text-danger-emphasis':''?>" style="min-width:38px;padding:6px 2px">
+                            <div class="fw-bold"><?=$dayNum?></div><div style="font-size:.65rem;font-weight:500"><?=$dn?></div>
                         </th>
                     <?php endfor; ?>
-                    <th class="text-center" style="min-width:45px">Top.</th>
+                    <th class="text-center bg-primary-subtle text-primary-emphasis" style="min-width:45px">Top.</th>
                 </tr>
             </thead>
             <tbody>
@@ -1344,9 +1412,9 @@ elseif ($page === 'timesheet'):
                     $totalDays = 0;
                 ?>
                 <tr>
-                    <td style="position:sticky;left:0;background:#fff;z-index:5;font-weight:500;font-size:.78rem">
+                    <td style="position:sticky;left:0;background:#fff;z-index:5;font-weight:600;font-size:.85rem; border-right: 2px solid var(--slate-200);">
                         <?=sanitize($emp['full_name'])?>
-                        <br><small class="text-muted"><?=sanitize($emp['unit_name']??'')?></small>
+                        <br><small class="text-muted fw-normal" style="font-size: 0.7rem"><?=sanitize($emp['unit_name']??'')?></small>
                     </td>
                     <?php for($d=1;$d<=$daysToDisplay;$d++):
                         if ($viewType === 'monthly') {
