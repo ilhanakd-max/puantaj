@@ -24,19 +24,197 @@ try {
     $pdo = new PDO(
         "mysql:host=$db_host;dbname=$db_name;charset=utf8mb4",
         $db_user, $db_pass,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+            PDO::ATTR_PERSISTENT => true
+        ]
     );
 } catch (PDOException $e) {
     die('<div style="text-align:center;padding:50px;font-family:sans-serif;"><h2>Veritabanı Bağlantı Hatası</h2><p>'.htmlspecialchars($e->getMessage()).'</p></div>');
 }
 
-// Admin şifresi hash kontrolü
-$stmt = $pdo->prepare("SELECT password FROM users WHERE username = 'admin'");
-$stmt->execute();
-$ar = $stmt->fetch();
-if ($ar && !password_verify('Aeg151851', $ar['password'])) {
-    $pdo->prepare("UPDATE users SET password = ? WHERE username = 'admin'")->execute([password_hash('Aeg151851', PASSWORD_DEFAULT)]);
+/**
+ * Veritabanı tablolarını ve temel verileri oluşturur
+ */
+function initDatabase() {
+    global $pdo;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS institutions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            address TEXT,
+            phone VARCHAR(20),
+            email VARCHAR(100),
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_active (is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS units (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            institution_id INT NOT NULL,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            address TEXT,
+            phone VARCHAR(20),
+            manager_name VARCHAR(100),
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_inst (institution_id),
+            INDEX idx_active (is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            full_name VARCHAR(100) NOT NULL,
+            email VARCHAR(100),
+            phone VARCHAR(20),
+            address TEXT,
+            tc_no VARCHAR(11),
+            birth_date DATE,
+            gender ENUM('Erkek','Kadın','Diğer'),
+            role ENUM('admin','employee') DEFAULT 'employee',
+            unit_id INT,
+            position VARCHAR(100),
+            hire_date DATE,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_unit (unit_id),
+            INDEX idx_role (role),
+            INDEX idx_active (is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS work_records (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            unit_id INT,
+            work_date DATE NOT NULL,
+            start_time TIME,
+            end_time TIME,
+            break_minutes INT DEFAULT 0,
+            overtime_minutes INT DEFAULT 0,
+            status ENUM('present','absent','leave','sick','holiday','half_day') DEFAULT 'present',
+            notes TEXT,
+            created_by INT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_user_date (user_id, work_date),
+            INDEX idx_user (user_id),
+            INDEX idx_date (work_date),
+            INDEX idx_status (status),
+            INDEX idx_unit (unit_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS work_templates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            day_index INT NOT NULL,
+            unit_id INT,
+            start_time TIME DEFAULT '08:00:00',
+            end_time TIME DEFAULT '17:00:00',
+            break_minutes INT DEFAULT 60,
+            status ENUM('present','absent','leave','sick','holiday','half_day') DEFAULT 'present',
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_user_day (user_id, day_index),
+            INDEX idx_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS leave_records (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            leave_type ENUM('annual','sick','unpaid','maternity','marriage','bereavement','other') DEFAULT 'annual',
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            total_days INT DEFAULT 1,
+            reason TEXT,
+            status ENUM('pending','approved','rejected','cancelled') DEFAULT 'pending',
+            approved_by INT,
+            approved_at DATETIME,
+            rejection_reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_user (user_id),
+            INDEX idx_dates (start_date, end_date),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS holidays (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            date DATE NOT NULL UNIQUE,
+            is_recurring TINYINT(1) DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS cycle_config (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            cycle_start_date DATE NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            setting_key VARCHAR(100) NOT NULL UNIQUE,
+            setting_value TEXT,
+            description VARCHAR(255),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            is_read TINYINT(1) DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Varsayılan ayarlar
+        $pdo->exec("INSERT IGNORE INTO cycle_config (id, cycle_start_date) VALUES (1, '2025-01-06')");
+
+        $defaultSettings = [
+            'site_title' => ['Puantaj Sistemi', 'Site başlığı'],
+            'company_name' => ['Çeşme Belediyesi', 'Kurum adı'],
+            'work_start_time' => ['08:30', 'Varsayılan mesai başlangıç'],
+            'work_end_time' => ['17:30', 'Varsayılan mesai bitiş'],
+            'break_duration' => ['60', 'Varsayılan öğle arası (dakika)'],
+            'theme_color' => ['#2563eb', 'Ana tema rengi']
+        ];
+        foreach ($defaultSettings as $k => $v) {
+            $stmt = $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)");
+            $stmt->execute([$k, $v[0], $v[1]]);
+        }
+
+        // Admin kullanıcısı (şifre: Aeg151851)
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE username = 'admin'");
+        $stmt->execute();
+        if (!$stmt->fetch()) {
+            $pdo->prepare("INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)")
+                ->execute(['admin', password_hash('Aeg151851', PASSWORD_DEFAULT), 'Sistem Yöneticisi', 'admin']);
+        } else {
+            // Şifreyi güncelle (gerekiyorsa)
+            $pdo->prepare("UPDATE users SET password = ? WHERE username = 'admin'")->execute([password_hash('Aeg151851', PASSWORD_DEFAULT)]);
+        }
+
+    } catch (PDOException $e) {
+        error_log("initDatabase Hatası: " . $e->getMessage());
+    }
 }
+
+// Veritabanını ilklendir
+initDatabase();
 
 // =====================================================
 // YARDIMCI FONKSİYONLAR
@@ -48,7 +226,24 @@ function redirect($p) { header("Location: ?page=$p"); exit; }
 function sanitize($s) { return htmlspecialchars(trim($s ?? ''), ENT_QUOTES, 'UTF-8'); }
 function setFlash($t, $m) { $_SESSION['flash'] = ['type'=>$t, 'message'=>$m]; }
 function getFlash() { if (isset($_SESSION['flash'])) { $f=$_SESSION['flash']; unset($_SESSION['flash']); return $f; } return null; }
-function getSetting($k, $d='') { global $pdo; $s=$pdo->prepare("SELECT setting_value FROM settings WHERE setting_key=?"); $s->execute([$k]); $r=$s->fetch(); return $r ? $r['setting_value'] : $d; }
+
+$settingsCache = null;
+function getSetting($k, $d='') {
+    global $pdo, $settingsCache;
+    try {
+        if ($settingsCache === null) {
+            $settingsCache = [];
+            $all = $pdo->query("SELECT setting_key, setting_value FROM settings")->fetchAll();
+            foreach ($all as $row) {
+                $settingsCache[$row['setting_key']] = $row['setting_value'];
+            }
+        }
+        return $settingsCache[$k] ?? $d;
+    } catch (Exception $e) {
+        error_log("getSetting Hatası: " . $e->getMessage());
+        return $d;
+    }
+}
 function formatDate($d) { return $d ? date('d.m.Y', strtotime($d)) : '-'; }
 function formatTime($t) { return $t ? date('H:i', strtotime($t)) : '-'; }
 
@@ -107,9 +302,16 @@ function calcWorkHours($start, $end, $brk = 0) {
  */
 function getCycleDayIndex($dateStr) {
     global $pdo;
-    $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
-    $row = $stmt->fetch();
-    $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+    static $cycleStart = null;
+    static $indexCache = [];
+
+    if (isset($indexCache[$dateStr])) return $indexCache[$dateStr];
+
+    if ($cycleStart === null) {
+        $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
+        $row = $stmt->fetch();
+        $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+    }
     
     $start = new DateTime($cycleStart);
     $target = new DateTime($dateStr);
@@ -117,6 +319,8 @@ function getCycleDayIndex($dateStr) {
     $cycleLen = 28; // 4 hafta
     $index = $diff % $cycleLen;
     if ($index < 0) $index += $cycleLen;
+
+    $indexCache[$dateStr] = $index;
     return $index;
 }
 
@@ -129,8 +333,8 @@ function getCycleDayIndex($dateStr) {
 function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache = null) {
     global $pdo;
     
-    $defStart = getSetting('work_start_time', '08:00');
-    $defEnd = getSetting('work_end_time', '17:00');
+    $defStart = getSetting('work_start_time', '08:30');
+    $defEnd = getSetting('work_end_time', '17:30');
     $defBreak = (int)getSetting('break_duration', '60');
     
     // 1. Manuel kayıt kontrolü
@@ -181,12 +385,12 @@ function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache
     static $nationalHolidays = null;
     if ($nationalHolidays === null) {
         try {
-            $nationalHolidays = $pdo->query("SELECT date FROM holidays")->fetchAll(PDO::FETCH_COLUMN);
+            $nationalHolidays = array_flip($pdo->query("SELECT date FROM holidays")->fetchAll(PDO::FETCH_COLUMN));
         } catch (Exception $e) {
             $nationalHolidays = [];
         }
     }
-    if (in_array($dateStr, $nationalHolidays)) {
+    if (isset($nationalHolidays[$dateStr])) {
         return [
             'status'           => 'holiday',
             'start_time'       => null,
@@ -311,57 +515,68 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // -- GİRİŞ --
 if ($action === 'login') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username=? AND is_active=1");
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
-    if ($user && password_verify($password, $user['password'])) {
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['user_role'] = $user['role'];
-        $_SESSION['user_name'] = $user['full_name'];
-        $_SESSION['username'] = $user['username'];
-        setFlash('success', 'Hoş geldiniz, ' . $user['full_name'] . '!');
-        redirect('dashboard');
-    } else {
-        setFlash('danger', 'Kullanıcı adı veya şifre hatalı!');
+    try {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE username=? AND is_active=1");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+        if ($user && password_verify($password, $user['password'])) {
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_role'] = $user['role'];
+            $_SESSION['user_name'] = $user['full_name'];
+            $_SESSION['username'] = $user['username'];
+            setFlash('success', 'Hoş geldiniz, ' . $user['full_name'] . '!');
+            redirect('dashboard');
+        } else {
+            setFlash('danger', 'Kullanıcı adı veya şifre hatalı!');
+            redirect('login');
+        }
+    } catch (Exception $e) {
+        error_log("Giriş Hatası: " . $e->getMessage());
+        setFlash('danger', 'Giriş işlemi sırasında bir hata oluştu.');
         redirect('login');
     }
 }
 
 // -- KAYIT --
 if ($action === 'register') {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $password2 = $_POST['password2'] ?? '';
-    $full_name = trim($_POST['full_name'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-    $tc_no = trim($_POST['tc_no'] ?? '');
-    $birth_date = $_POST['birth_date'] ?? null;
-    $gender = $_POST['gender'] ?? null;
-    $unit_id = $_POST['unit_id'] ?? null;
-    $position = trim($_POST['position'] ?? '');
+    try {
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $password2 = $_POST['password2'] ?? '';
+        $full_name = trim($_POST['full_name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        $address = trim($_POST['address'] ?? '');
+        $tc_no = trim($_POST['tc_no'] ?? '');
+        $birth_date = $_POST['birth_date'] ?? null;
+        $gender = $_POST['gender'] ?? null;
+        $unit_id = $_POST['unit_id'] ?? null;
+        $position = trim($_POST['position'] ?? '');
 
-    if (!$username || !$password || !$full_name) { setFlash('danger', 'Zorunlu alanları doldurunuz!'); redirect('register'); }
-    if ($password !== $password2) { setFlash('danger', 'Şifreler eşleşmiyor!'); redirect('register'); }
-    if (strlen($password) < 6) { setFlash('danger', 'Şifre en az 6 karakter olmalı!'); redirect('register'); }
+        if (!$username || !$password || !$full_name) { throw new Exception('Zorunlu alanları doldurunuz!'); }
+        if ($password !== $password2) { throw new Exception('Şifreler eşleşmiyor!'); }
+        if (strlen($password) < 6) { throw new Exception('Şifre en az 6 karakter olmalı!'); }
 
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE username=?");
-    $stmt->execute([$username]);
-    if ($stmt->fetch()) { setFlash('danger', 'Bu kullanıcı adı zaten kullanılıyor!'); redirect('register'); }
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE username=?");
+        $stmt->execute([$username]);
+        if ($stmt->fetch()) { throw new Exception('Bu kullanıcı adı zaten kullanılıyor!'); }
 
-    $hash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $pdo->prepare("INSERT INTO users (username, password, full_name, email, phone, address, tc_no, birth_date, gender, unit_id, position, role, hire_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,'employee',CURDATE())");
-    $stmt->execute([$username, $hash, $full_name, $email ?: null, $phone ?: null, $address ?: null, $tc_no ?: null, $birth_date ?: null, $gender ?: null, $unit_id ?: null, $position ?: null]);
-    
-    // Yeni kayıt olan kullanıcı için şablon oluştur
-    $newUserId = $pdo->lastInsertId();
-    ensureTemplate($newUserId);
-    
-    setFlash('success', 'Kayıt başarılı! Giriş yapabilirsiniz.');
-    redirect('login');
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("INSERT INTO users (username, password, full_name, email, phone, address, tc_no, birth_date, gender, unit_id, position, role, hire_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,'employee',CURDATE())");
+        $stmt->execute([$username, $hash, $full_name, $email ?: null, $phone ?: null, $address ?: null, $tc_no ?: null, $birth_date ?: null, $gender ?: null, $unit_id ?: null, $position ?: null]);
+
+        $newUserId = $pdo->lastInsertId();
+        ensureTemplate($newUserId);
+
+        setFlash('success', 'Kayıt başarılı! Giriş yapabilirsiniz.');
+        redirect('login');
+    } catch (Exception $e) {
+        error_log("Kayıt Hatası: " . $e->getMessage());
+        setFlash('danger', $e->getMessage());
+        redirect('register');
+    }
 }
 
 // -- ÇIKIŞ --
@@ -374,92 +589,179 @@ if (isLoggedIn() && isAdmin()) {
 
     // KURUM EKLE
     if ($action === 'add_institution') {
-        $n = trim($_POST['name']??'');
-        if ($n) { $pdo->prepare("INSERT INTO institutions (name,description,address,phone,email) VALUES (?,?,?,?,?)")->execute([$n, trim($_POST['description']??'') ?: null, trim($_POST['address']??'') ?: null, trim($_POST['phone']??'') ?: null, trim($_POST['email']??'') ?: null]); setFlash('success','Kurum eklendi.'); }
+        try {
+            $n = trim($_POST['name']??'');
+            if ($n) {
+                $pdo->prepare("INSERT INTO institutions (name,description,address,phone,email) VALUES (?,?,?,?,?)")
+                    ->execute([$n, trim($_POST['description']??'') ?: null, trim($_POST['address']??'') ?: null, trim($_POST['phone']??'') ?: null, trim($_POST['email']??'') ?: null]);
+                setFlash('success','Kurum eklendi.');
+            }
+        } catch (Exception $e) {
+            error_log("Kurum Ekleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kurum eklenirken bir hata oluştu.');
+        }
         redirect('institutions');
     }
     // KURUM GÜNCELLE
     if ($action === 'edit_institution') {
-        $id=(int)($_POST['id']??0); $n=trim($_POST['name']??'');
-        if ($id && $n) { $pdo->prepare("UPDATE institutions SET name=?,description=?,address=?,phone=?,email=?,is_active=? WHERE id=?")->execute([$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['email']??'') ?: null,isset($_POST['is_active'])?1:0,$id]); setFlash('success','Kurum güncellendi.'); }
+        try {
+            $id=(int)($_POST['id']??0); $n=trim($_POST['name']??'');
+            if ($id && $n) {
+                $pdo->prepare("UPDATE institutions SET name=?,description=?,address=?,phone=?,email=?,is_active=? WHERE id=?")
+                    ->execute([$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['email']??'') ?: null,isset($_POST['is_active'])?1:0,$id]);
+                setFlash('success','Kurum güncellendi.');
+            }
+        } catch (Exception $e) {
+            error_log("Kurum Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kurum güncellenirken bir hata oluştu.');
+        }
         redirect('institutions');
     }
     // KURUM SİL
-    if ($action === 'delete_institution') { $id=(int)($_GET['id']??0); if ($id) { $pdo->prepare("DELETE FROM institutions WHERE id=?")->execute([$id]); setFlash('success','Kurum silindi.'); } redirect('institutions'); }
+    if ($action === 'delete_institution') {
+        try {
+            $id=(int)($_GET['id']??0);
+            if ($id) {
+                $pdo->prepare("DELETE FROM institutions WHERE id=?")->execute([$id]);
+                setFlash('success','Kurum silindi.');
+            }
+        } catch (Exception $e) {
+            error_log("Kurum Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kurum silinirken bir hata oluştu.');
+        }
+        redirect('institutions');
+    }
 
     // BİRİM EKLE
     if ($action === 'add_unit') {
-        $iid=(int)($_POST['institution_id']??0); $n=trim($_POST['name']??'');
-        if ($iid && $n) { $pdo->prepare("INSERT INTO units (institution_id,name,description,address,phone,manager_name) VALUES (?,?,?,?,?,?)")->execute([$iid,$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['manager_name']??'') ?: null]); setFlash('success','Birim eklendi.'); }
+        try {
+            $iid=(int)($_POST['institution_id']??0); $n=trim($_POST['name']??'');
+            if ($iid && $n) {
+                $pdo->prepare("INSERT INTO units (institution_id,name,description,address,phone,manager_name) VALUES (?,?,?,?,?,?)")
+                    ->execute([$iid,$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['manager_name']??'') ?: null]);
+                setFlash('success','Birim eklendi.');
+            }
+        } catch (Exception $e) {
+            error_log("Birim Ekleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Birim eklenirken bir hata oluştu.');
+        }
         redirect('units');
     }
     // BİRİM GÜNCELLE
     if ($action === 'edit_unit') {
-        $id=(int)($_POST['id']??0); $n=trim($_POST['name']??'');
-        if ($id && $n) { $pdo->prepare("UPDATE units SET institution_id=?,name=?,description=?,address=?,phone=?,manager_name=?,is_active=? WHERE id=?")->execute([(int)($_POST['institution_id']??0),$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['manager_name']??'') ?: null,isset($_POST['is_active'])?1:0,$id]); setFlash('success','Birim güncellendi.'); }
+        try {
+            $id=(int)($_POST['id']??0); $n=trim($_POST['name']??'');
+            if ($id && $n) {
+                $pdo->prepare("UPDATE units SET institution_id=?,name=?,description=?,address=?,phone=?,manager_name=?,is_active=? WHERE id=?")
+                    ->execute([(int)($_POST['institution_id']??0),$n,trim($_POST['description']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['manager_name']??'') ?: null,isset($_POST['is_active'])?1:0,$id]);
+                setFlash('success','Birim güncellendi.');
+            }
+        } catch (Exception $e) {
+            error_log("Birim Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Birim güncellenirken bir hata oluştu.');
+        }
         redirect('units');
     }
     // BİRİM SİL
-    if ($action === 'delete_unit') { $id=(int)($_GET['id']??0); if ($id) { $pdo->prepare("DELETE FROM units WHERE id=?")->execute([$id]); setFlash('success','Birim silindi.'); } redirect('units'); }
+    if ($action === 'delete_unit') {
+        try {
+            $id=(int)($_GET['id']??0);
+            if ($id) {
+                $pdo->prepare("DELETE FROM units WHERE id=?")->execute([$id]);
+                setFlash('success','Birim silindi.');
+            }
+        } catch (Exception $e) {
+            error_log("Birim Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Birim silinirken bir hata oluştu.');
+        }
+        redirect('units');
+    }
 
     // KULLANICI GÜNCELLE
     if ($action === 'admin_edit_user') {
-        $id=(int)($_POST['id']??0);
-        $un=trim($_POST['username']??'');
-        if ($id && $un) {
-            // Kullanıcı adı çakışma kontrolü
-            $chk=$pdo->prepare("SELECT id FROM users WHERE username=? AND id!=?");
-            $chk->execute([$un,$id]);
-            if ($chk->fetch()) {
-                setFlash('danger','Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor!');
-            } else {
-                $sql = "UPDATE users SET full_name=?,username=?,email=?,phone=?,address=?,tc_no=?,birth_date=?,gender=?,unit_id=?,position=?,role=?,is_active=?";
-                $p = [trim($_POST['full_name']??''),$un,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['tc_no']??'') ?: null,$_POST['birth_date'] ?: null,$_POST['gender'] ?: null,$_POST['unit_id'] ?: null,trim($_POST['position']??'') ?: null,$_POST['role']??'employee',isset($_POST['is_active'])?1:0];
-                if ($_POST['new_password']??'') { $sql.=",password=?"; $p[]=password_hash($_POST['new_password'],PASSWORD_DEFAULT); }
-                $sql.=" WHERE id=?"; $p[]=$id;
-                $pdo->prepare($sql)->execute($p);
-                ensureTemplate($id);
-                setFlash('success','Kullanıcı güncellendi.');
+        try {
+            $id=(int)($_POST['id']??0);
+            $un=trim($_POST['username']??'');
+            if ($id && $un) {
+                // Kullanıcı adı çakışma kontrolü
+                $chk=$pdo->prepare("SELECT id FROM users WHERE username=? AND id!=?");
+                $chk->execute([$un,$id]);
+                if ($chk->fetch()) {
+                    throw new Exception('Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor!');
+                } else {
+                    $sql = "UPDATE users SET full_name=?,username=?,email=?,phone=?,address=?,tc_no=?,birth_date=?,gender=?,unit_id=?,position=?,role=?,is_active=?";
+                    $p = [trim($_POST['full_name']??''),$un,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['address']??'') ?: null,trim($_POST['tc_no']??'') ?: null,$_POST['birth_date'] ?: null,$_POST['gender'] ?: null,$_POST['unit_id'] ?: null,trim($_POST['position']??'') ?: null,$_POST['role']??'employee',isset($_POST['is_active'])?1:0];
+                    if ($_POST['new_password']??'') { $sql.=",password=?"; $p[]=password_hash($_POST['new_password'],PASSWORD_DEFAULT); }
+                    $sql.=" WHERE id=?"; $p[]=$id;
+                    $pdo->prepare($sql)->execute($p);
+                    ensureTemplate($id);
+                    setFlash('success','Kullanıcı güncellendi.');
+                }
             }
+        } catch (Exception $e) {
+            error_log("Kullanıcı Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', $e->getMessage());
         }
         redirect('users');
     }
     // KULLANICI SİL
-    if ($action === 'delete_user') { $id=(int)($_GET['id']??0); if ($id && $id != (int)currentUserId()) { $pdo->prepare("DELETE FROM users WHERE id=?")->execute([$id]); setFlash('success','Kullanıcı silindi.'); } redirect('users'); }
+    if ($action === 'delete_user') {
+        try {
+            $id=(int)($_GET['id']??0);
+            if ($id && $id != (int)currentUserId()) {
+                $pdo->prepare("DELETE FROM users WHERE id=?")->execute([$id]);
+                setFlash('success','Kullanıcı silindi.');
+            }
+        } catch (Exception $e) {
+            error_log("Kullanıcı Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kullanıcı silinirken bir hata oluştu.');
+        }
+        redirect('users');
+    }
     // KULLANICI EKLE
     if ($action === 'admin_add_user') {
-        $un=trim($_POST['username']??''); $pw=$_POST['password']??''; $fn=trim($_POST['full_name']??'');
-        if ($un && $pw && $fn) {
-            $chk=$pdo->prepare("SELECT id FROM users WHERE username=?"); $chk->execute([$un]);
-            if ($chk->fetch()) { setFlash('danger','Bu kullanıcı adı mevcut!'); }
-            else {
-                $pdo->prepare("INSERT INTO users (username,password,full_name,email,phone,role,unit_id,position,hire_date) VALUES (?,?,?,?,?,?,?,?,CURDATE())")
-                    ->execute([$un,password_hash($pw,PASSWORD_DEFAULT),$fn,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,$_POST['role']??'employee',$_POST['unit_id'] ?: null,trim($_POST['position']??'') ?: null]);
-                $newId = $pdo->lastInsertId();
-                ensureTemplate($newId);
-                setFlash('success','Kullanıcı eklendi ve şablonu oluşturuldu.');
+        try {
+            $un=trim($_POST['username']??''); $pw=$_POST['password']??''; $fn=trim($_POST['full_name']??'');
+            if ($un && $pw && $fn) {
+                $chk=$pdo->prepare("SELECT id FROM users WHERE username=?"); $chk->execute([un]);
+                if ($chk->fetch()) { throw new Exception('Bu kullanıcı adı mevcut!'); }
+                else {
+                    $pdo->prepare("INSERT INTO users (username,password,full_name,email,phone,role,unit_id,position,hire_date) VALUES (?,?,?,?,?,?,?,?,CURDATE())")
+                        ->execute([$un,password_hash($pw,PASSWORD_DEFAULT),$fn,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,$_POST['role']??'employee',$_POST['unit_id'] ?: null,trim($_POST['position']??'') ?: null]);
+                    $newId = $pdo->lastInsertId();
+                    ensureTemplate($newId);
+                    setFlash('success','Kullanıcı eklendi ve şablonu oluşturuldu.');
+                }
             }
+        } catch (Exception $e) {
+            error_log("Kullanıcı Ekleme Hatası: " . $e->getMessage());
+            setFlash('danger', $e->getMessage());
         }
         redirect('users');
     }
 
     // PUANTAJ TEK GÜN GİRİŞİ (override)
     if ($action === 'add_work_record') {
-        $uid=(int)($_POST['user_id']??0); $dt=$_POST['work_date']??'';
-        if ($uid && $dt) {
-            $st=$_POST['start_time'] ?: null; $et=$_POST['end_time'] ?: null;
-            $brk=(int)($_POST['break_minutes']??0); $ot=(int)($_POST['overtime_minutes']??0);
-            $status=$_POST['status']??'present'; $notes=trim($_POST['notes']??''); $unitId=(int)($_POST['unit_id']??0);
-            
-            $chk=$pdo->prepare("SELECT id FROM work_records WHERE user_id=? AND work_date=?"); $chk->execute([$uid,$dt]);
-            if ($chk->fetch()) {
-                $pdo->prepare("UPDATE work_records SET unit_id=?,start_time=?,end_time=?,break_minutes=?,overtime_minutes=?,status=?,notes=?,created_by=? WHERE user_id=? AND work_date=?")
-                    ->execute([$unitId ?: null,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId(),$uid,$dt]);
-            } else {
-                $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
-                    ->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
+        try {
+            $uid=(int)($_POST['user_id']??0); $dt=$_POST['work_date']??'';
+            if ($uid && $dt) {
+                $st=$_POST['start_time'] ?: null; $et=$_POST['end_time'] ?: null;
+                $brk=(int)($_POST['break_minutes']??0); $ot=(int)($_POST['overtime_minutes']??0);
+                $status=$_POST['status']??'present'; $notes=trim($_POST['notes']??''); $unitId=(int)($_POST['unit_id']??0);
+
+                $chk=$pdo->prepare("SELECT id FROM work_records WHERE user_id=? AND work_date=?"); $chk->execute([$uid,$dt]);
+                if ($chk->fetch()) {
+                    $pdo->prepare("UPDATE work_records SET unit_id=?,start_time=?,end_time=?,break_minutes=?,overtime_minutes=?,status=?,notes=?,created_by=? WHERE user_id=? AND work_date=?")
+                        ->execute([$unitId ?: null,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId(),$uid,$dt]);
+                } else {
+                    $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                        ->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
+                }
+                setFlash('success','Puantaj kaydı güncellendi.');
             }
-            setFlash('success','Puantaj kaydı güncellendi.');
+        } catch (Exception $e) {
+            error_log("Puantaj Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Puantaj kaydı güncellenirken bir hata oluştu.');
         }
         $m = $_POST['month'] ?? date('n', strtotime($_POST['work_date'] ?? 'now'));
         $y = $_POST['year'] ?? date('Y', strtotime($_POST['work_date'] ?? 'now'));
@@ -470,10 +772,15 @@ if (isLoggedIn() && isAdmin()) {
 
     // PUANTAJ OVERRIDE SİL (şablona geri dön)
     if ($action === 'reset_work_record') {
-        $uid=(int)($_GET['uid']??0); $dt=$_GET['date']??'';
-        if ($uid && $dt) {
-            $pdo->prepare("DELETE FROM work_records WHERE user_id=? AND work_date=?")->execute([$uid,$dt]);
-            setFlash('success','Kayıt sıfırlandı, şablon değeri kullanılacak.');
+        try {
+            $uid=(int)($_GET['uid']??0); $dt=$_GET['date']??'';
+            if ($uid && $dt) {
+                $pdo->prepare("DELETE FROM work_records WHERE user_id=? AND work_date=?")->execute([$uid,$dt]);
+                setFlash('success','Kayıt sıfırlandı, şablon değeri kullanılacak.');
+            }
+        } catch (Exception $e) {
+            error_log("Puantaj Sıfırlama Hatası: " . $e->getMessage());
+            setFlash('danger', 'Puantaj kaydı sıfırlanırken bir hata oluştu.');
         }
         $m = $_GET['month'] ?? date('n', strtotime($dt ?: 'now'));
         $y = $_GET['year'] ?? date('Y', strtotime($dt ?: 'now'));
@@ -484,34 +791,41 @@ if (isLoggedIn() && isAdmin()) {
 
     // TOPLU PUANTAJ GİRİŞİ
     if ($action === 'bulk_work_record') {
-        $dt=$_POST['work_date']??''; $udata=$_POST['users']??[];
-        if ($dt && !empty($udata)) {
-            foreach ($udata as $uid => $d) {
-                $uid=(int)$uid; $status=$d['status']??'present';
-                $st=$d['start_time'] ?: null; $et=$d['end_time'] ?: null;
-                $brk=(int)($d['break_minutes']??0); $ot=(int)($d['overtime_minutes']??0);
-                $unitId=(int)($d['unit_id']??0); $notes=trim($d['notes']??'');
-                
-                // Sadece varsayılandan farklıysa kaydet
-                $default = getDayStatus($uid, $dt);
-                $isDifferent = ($status !== ($default['status']??'present')) ||
-                               ($st && $st !== ($default['start_time']??'')) ||
-                               ($et && $et !== ($default['end_time']??'')) ||
-                               ($brk != ($default['break_minutes']??0)) ||
-                               ($ot > 0) || ($notes !== '') || ($unitId > 0 && $unitId != ($default['unit_id']??0));
-                
-                if ($isDifferent) {
-                    $chk=$pdo->prepare("SELECT id FROM work_records WHERE user_id=? AND work_date=?"); $chk->execute([$uid,$dt]);
-                    if ($chk->fetch()) {
-                        $pdo->prepare("UPDATE work_records SET unit_id=?,start_time=?,end_time=?,break_minutes=?,overtime_minutes=?,status=?,notes=?,created_by=? WHERE user_id=? AND work_date=?")
-                            ->execute([$unitId ?: null,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId(),$uid,$dt]);
-                    } else {
-                        $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
-                            ->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
+        try {
+            $dt=$_POST['work_date']??''; $udata=$_POST['users']??[];
+            if ($dt && !empty($udata)) {
+                $stmt_upd = $pdo->prepare("UPDATE work_records SET unit_id=?,start_time=?,end_time=?,break_minutes=?,overtime_minutes=?,status=?,notes=?,created_by=? WHERE user_id=? AND work_date=?");
+                $stmt_ins = $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)");
+                $stmt_chk = $pdo->prepare("SELECT id FROM work_records WHERE user_id=? AND work_date=?");
+
+                foreach ($udata as $uid => $d) {
+                    $uid=(int)$uid; $status=$d['status']??'present';
+                    $st=$d['start_time'] ?: null; $et=$d['end_time'] ?: null;
+                    $brk=(int)($d['break_minutes']??0); $ot=(int)($d['overtime_minutes']??0);
+                    $unitId=(int)($d['unit_id']??0); $notes=trim($d['notes']??'');
+
+                    // Sadece varsayılandan farklıysa kaydet
+                    $default = getDayStatus($uid, $dt);
+                    $isDifferent = ($status !== ($default['status']??'present')) ||
+                                   ($st && $st !== ($default['start_time']??'')) ||
+                                   ($et && $et !== ($default['end_time']??'')) ||
+                                   ($brk != ($default['break_minutes']??0)) ||
+                                   ($ot > 0) || ($notes !== '') || ($unitId > 0 && $unitId != ($default['unit_id']??0));
+
+                    if ($isDifferent) {
+                        $stmt_chk->execute([$uid,$dt]);
+                        if ($stmt_chk->fetch()) {
+                            $stmt_upd->execute([$unitId ?: null,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId(),$uid,$dt]);
+                        } else {
+                            $stmt_ins->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
+                        }
                     }
                 }
+                setFlash('success','Toplu puantaj güncellendi.');
             }
-            setFlash('success','Toplu puantaj güncellendi.');
+        } catch (Exception $e) {
+            error_log("Toplu Puantaj Hatası: " . $e->getMessage());
+            setFlash('danger', 'Toplu puantaj işlemi sırasında bir hata oluştu.');
         }
         $m = $_POST['month'] ?? date('n', strtotime($_POST['work_date'] ?? 'now'));
         $y = $_POST['year'] ?? date('Y', strtotime($_POST['work_date'] ?? 'now'));
@@ -522,22 +836,26 @@ if (isLoggedIn() && isAdmin()) {
 
     // ŞABLON GÜNCELLE
     if ($action === 'update_template') {
-        $uid=(int)($_POST['user_id']??0);
-        if ($uid) {
-            $tdata = $_POST['template'] ?? [];
-            foreach ($tdata as $dayIdx => $d) {
-                $dayIdx = (int)$dayIdx;
-                $status = $d['status'] ?? 'present';
-                $st = $d['start_time'] ?: null;
-                $et = $d['end_time'] ?: null;
-                $brk = (int)($d['break_minutes'] ?? 0);
-                $unitId = (int)($d['unit_id'] ?? 0);
-                $notes = trim($d['notes'] ?? '');
-                
-                $pdo->prepare("INSERT INTO work_templates (user_id,day_index,unit_id,start_time,end_time,break_minutes,status,notes) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id),start_time=VALUES(start_time),end_time=VALUES(end_time),break_minutes=VALUES(break_minutes),status=VALUES(status),notes=VALUES(notes)")
-                    ->execute([$uid,$dayIdx,$unitId ?: null,$st,$et,$brk,$status,$notes ?: null]);
+        try {
+            $uid=(int)($_POST['user_id']??0);
+            if ($uid) {
+                $tdata = $_POST['template'] ?? [];
+                $stmt = $pdo->prepare("INSERT INTO work_templates (user_id,day_index,unit_id,start_time,end_time,break_minutes,status,notes) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id),start_time=VALUES(start_time),end_time=VALUES(end_time),break_minutes=VALUES(break_minutes),status=VALUES(status),notes=VALUES(notes)");
+                foreach ($tdata as $dayIdx => $d) {
+                    $dayIdx = (int)$dayIdx;
+                    $status = $d['status'] ?? 'present';
+                    $st = $d['start_time'] ?: null;
+                    $et = $d['end_time'] ?: null;
+                    $brk = (int)($d['break_minutes'] ?? 0);
+                    $unitId = (int)($d['unit_id'] ?? 0);
+                    $notes = trim($d['notes'] ?? '');
+                    $stmt->execute([$uid,$dayIdx,$unitId ?: null,$st,$et,$brk,$status,$notes ?: null]);
+                }
+                setFlash('success','4 haftalık şablon güncellendi.');
             }
-            setFlash('success','4 haftalık şablon güncellendi.');
+        } catch (Exception $e) {
+            error_log("Şablon Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Şablon güncellenirken bir hata oluştu.');
         }
         redirect('template&uid=' . $uid);
     }
@@ -565,123 +883,185 @@ if (isLoggedIn() && isAdmin()) {
 
     // İZİN ONAYLA/REDDET
     if ($action === 'approve_leave') {
-        $id=(int)($_POST['id']??0); $status=$_POST['status']??'';
-        if ($id && in_array($status,['approved','rejected'])) {
-            $pdo->prepare("UPDATE leave_records SET status=?,approved_by=?,approved_at=NOW(),rejection_reason=? WHERE id=?")
-                ->execute([$status,currentUserId(),trim($_POST['rejection_reason']??'') ?: null,$id]);
-            setFlash('success','İzin durumu güncellendi.');
+        try {
+            $id=(int)($_POST['id']??0); $status=$_POST['status']??'';
+            if ($id && in_array($status,['approved','rejected'])) {
+                $pdo->prepare("UPDATE leave_records SET status=?,approved_by=?,approved_at=NOW(),rejection_reason=? WHERE id=?")
+                    ->execute([$status,currentUserId(),trim($_POST['rejection_reason']??'') ?: null,$id]);
+                setFlash('success','İzin durumu güncellendi.');
+            }
+        } catch (Exception $e) {
+            error_log("İzin Onay Hatası: " . $e->getMessage());
+            setFlash('danger', 'İzin güncellenirken bir hata oluştu.');
         }
         redirect('leaves');
     }
-    if ($action === 'delete_leave') { $id=(int)($_GET['id']??0); if ($id) { $pdo->prepare("DELETE FROM leave_records WHERE id=?")->execute([$id]); setFlash('success','İzin silindi.'); } redirect('leaves'); }
+    if ($action === 'delete_leave') {
+        try {
+            $id=(int)($_GET['id']??0);
+            if ($id) {
+                $pdo->prepare("DELETE FROM leave_records WHERE id=?")->execute([$id]);
+                setFlash('success','İzin silindi.');
+            }
+        } catch (Exception $e) {
+            error_log("İzin Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'İzin silinirken bir hata oluştu.');
+        }
+        redirect('leaves');
+    }
     if ($action === 'admin_add_leave') {
-        $uid=(int)($_POST['user_id']??0); $sd=$_POST['start_date']??''; $ed=$_POST['end_date']??'';
-        if ($uid && $sd && $ed) {
-            $days=max(1,(strtotime($ed)-strtotime($sd))/86400+1);
-            $pdo->prepare("INSERT INTO leave_records (user_id,leave_type,start_date,end_date,total_days,reason,status,approved_by,approved_at) VALUES (?,?,?,?,?,?,?,?,NOW())")
-                ->execute([$uid,$_POST['leave_type']??'annual',$sd,$ed,$days,trim($_POST['reason']??'') ?: null,$_POST['status']??'approved',currentUserId()]);
-            setFlash('success','İzin eklendi.');
+        try {
+            $uid=(int)($_POST['user_id']??0); $sd=$_POST['start_date']??''; $ed=$_POST['end_date']??'';
+            if ($uid && $sd && $ed) {
+                $days=max(1,(strtotime($ed)-strtotime($sd))/86400+1);
+                $pdo->prepare("INSERT INTO leave_records (user_id,leave_type,start_date,end_date,total_days,reason,status,approved_by,approved_at) VALUES (?,?,?,?,?,?,?,?,NOW())")
+                    ->execute([$uid,$_POST['leave_type']??'annual',$sd,$ed,$days,trim($_POST['reason']??'') ?: null,$_POST['status']??'approved',currentUserId()]);
+                setFlash('success','İzin eklendi.');
+            }
+        } catch (Exception $e) {
+            error_log("İzin Ekleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'İzin eklenirken bir hata oluştu.');
         }
         redirect('leaves');
     }
 
     // AYARLAR
     if ($action === 'update_settings') {
-        foreach ($_POST['settings'] as $k => $v) { $pdo->prepare("UPDATE settings SET setting_value=? WHERE setting_key=?")->execute([trim($v),$k]); }
-        setFlash('success','Ayarlar güncellendi.');
+        try {
+            foreach ($_POST['settings'] as $k => $v) {
+                $pdo->prepare("UPDATE settings SET setting_value=? WHERE setting_key=?")->execute([trim($v),$k]);
+            }
+            $settingsCache = null; // Önbelleği temizle
+            setFlash('success','Ayarlar güncellendi.');
+        } catch (Exception $e) {
+            error_log("Ayarlar Güncelleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Ayarlar güncellenirken bir hata oluştu.');
+        }
         redirect('settings');
     }
 
     // WORD EXPORT
     if ($action === 'export_word') {
-        $selMonth = (int)($_GET['month'] ?? date('n'));
-        $selYear = (int)($_GET['year'] ?? date('Y'));
-        $selUnit = (int)($_GET['unit_filter'] ?? 0);
-        $selUser = (int)($_GET['user_filter'] ?? 0);
-        $startDate = $_GET['start_date'] ?? '';
-        $endDate = $_GET['end_date'] ?? '';
-        
-        if ($startDate && $endDate) {
-            $repStart = $startDate;
-            $repEnd = $endDate;
-            $title = formatDate($repStart) . " - " . formatDate($repEnd) . " Raporu";
-        } else {
-            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $selMonth, $selYear);
-            $repStart = sprintf('%04d-%02d-01', $selYear, $selMonth);
-            $repEnd = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $daysInMonth);
-            $title = turkishMonth($selMonth) . " $selYear Raporu";
-        }
-        
-        $userWhere = "u.is_active=1";
-        $params = [];
-        if ($selUnit) { $userWhere .= " AND u.unit_id=?"; $params[] = $selUnit; }
-        if ($selUser) { $userWhere .= " AND u.id=?"; $params[] = $selUser; }
-        $stmt = $pdo->prepare("SELECT u.id, u.full_name, un.name as unit_name FROM users u LEFT JOIN units un ON u.unit_id=un.id WHERE $userWhere ORDER BY u.full_name");
-        $stmt->execute($params);
-        $employees = $stmt->fetchAll();
-        $empIds = array_column($employees, 'id');
-        list($recCache, $tplCache) = buildRangeCache($repStart, $repEnd, $empIds);
+        try {
+            $selMonth = (int)($_GET['month'] ?? date('n'));
+            $selYear = (int)($_GET['year'] ?? date('Y'));
+            $selUnit = (int)($_GET['unit_filter'] ?? 0);
+            $selUser = (int)($_GET['user_filter'] ?? 0);
+            $startDate = $_GET['start_date'] ?? '';
+            $endDate = $_GET['end_date'] ?? '';
 
-        header("Content-Type: application/vnd.ms-word; charset=utf-8");
-        header("Content-Disposition: attachment; filename=puantaj-rapor.doc");
-        header("Pragma: no-cache");
-        header("Expires: 0");
-        
-        echo "<html><head><meta charset='utf-8'></head><body>";
-        echo "<h2 style='text-align:center;'>".sanitize($companyName)."</h2>";
-        echo "<h3 style='text-align:center;'>".sanitize($title)."</h3>";
-        if($selUnit) {
-            $un = $pdo->prepare("SELECT name FROM units WHERE id=?"); $un->execute([$selUnit]);
-            echo "<p><b>Birim:</b> ".sanitize($un->fetchColumn())."</p>";
-        }
-        echo "<table border='1' cellspacing='0' cellpadding='5' width='100%'>";
-        echo "<thead><tr style='background:#f2f2f2;'><th>Çalışan</th><th>Birim</th><th>Mevcut</th><th>Devamsız</th><th>İzinli</th><th>Hasta</th><th>Tatil</th><th>½ Gün</th></tr></thead>";
-        echo "<tbody>";
-        foreach($employees as $emp) {
-            $counts = ['present'=>0,'absent'=>0,'leave'=>0,'sick'=>0,'holiday'=>0,'half_day'=>0];
-            $cur = new DateTime($repStart);
-            $last = new DateTime($repEnd);
-            while($cur <= $last) {
-                $ds = $cur->format('Y-m-d');
-                $hasOvr = isset($recCache[$emp['id']][$ds]);
-                $dayData = $hasOvr ? $recCache[$emp['id']][$ds] : getDayStatus($emp['id'], $ds, $recCache, $tplCache);
-                $st = $dayData['status'] ?? 'present';
-                if (isset($counts[$st])) $counts[$st]++;
-                $cur->modify('+1 day');
+            if ($startDate && $endDate) {
+                $repStart = $startDate;
+                $repEnd = $endDate;
+                $reportTitle = formatDate($repStart) . " - " . formatDate($repEnd) . " Raporu";
+            } else {
+                $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $selMonth, $selYear);
+                $repStart = sprintf('%04d-%02d-01', $selYear, $selMonth);
+                $repEnd = sprintf('%04d-%02d-%02d', $selYear, $selMonth, $daysInMonth);
+                $reportTitle = turkishMonth($selMonth) . " $selYear Raporu";
             }
-            echo "<tr><td>".sanitize($emp['full_name'])."</td><td>".sanitize($emp['unit_name']??'-')."</td><td align='center'>{$counts['present']}</td><td align='center'>{$counts['absent']}</td><td align='center'>{$counts['leave']}</td><td align='center'>{$counts['sick']}</td><td align='center'>{$counts['holiday']}</td><td align='center'>{$counts['half_day']}</td></tr>";
+
+            $userWhere = "u.is_active=1";
+            $params = [];
+            if ($selUnit) { $userWhere .= " AND u.unit_id=?"; $params[] = $selUnit; }
+            if ($selUser) { $userWhere .= " AND u.id=?"; $params[] = $selUser; }
+            $stmt = $pdo->prepare("SELECT u.id, u.full_name, un.name as unit_name FROM users u LEFT JOIN units un ON u.unit_id=un.id WHERE $userWhere ORDER BY u.full_name");
+            $stmt->execute($params);
+            $employees = $stmt->fetchAll();
+            $empIds = array_column($employees, 'id');
+            list($recCache, $tplCache) = buildRangeCache($repStart, $repEnd, $empIds);
+
+            header("Content-Type: application/vnd.ms-word; charset=utf-8");
+            header("Content-Disposition: attachment; filename=\"$reportTitle.doc\"");
+            header("Pragma: no-cache");
+            header("Expires: 0");
+
+            echo "<html><head><meta charset='utf-8'></head><body>";
+            echo "<h2 style='text-align:center;'>".sanitize(getSetting('company_name', 'Puantaj Sistemi'))."</h2>";
+            echo "<h3 style='text-align:center;'>".sanitize($reportTitle)."</h3>";
+            if($selUnit) {
+                $un = $pdo->prepare("SELECT name FROM units WHERE id=?"); $un->execute([$selUnit]);
+                echo "<p><b>Birim:</b> ".sanitize($un->fetchColumn())."</p>";
+            }
+            echo "<table border='1' cellspacing='0' cellpadding='5' width='100%'>";
+            echo "<thead><tr style='background:#f2f2f2;'><th>Çalışan</th><th>Birim</th><th>Mevcut</th><th>Devamsız</th><th>İzinli</th><th>Hasta</th><th>Tatil</th><th>½ Gün</th></tr></thead>";
+            echo "<tbody>";
+            foreach($employees as $emp) {
+                $counts = ['present'=>0,'absent'=>0,'leave'=>0,'sick'=>0,'holiday'=>0,'half_day'=>0];
+                $cur = new DateTime($repStart);
+                $last = new DateTime($repEnd);
+                while($cur <= $last) {
+                    $ds = $cur->format('Y-m-d');
+                    $hasOvr = isset($recCache[$emp['id']][$ds]);
+                    $dayData = $hasOvr ? $recCache[$emp['id']][$ds] : getDayStatus($emp['id'], $ds, $recCache, $tplCache);
+                    $st = $dayData['status'] ?? 'present';
+                    if (isset($counts[$st])) $counts[$st]++;
+                    $cur->modify('+1 day');
+                }
+                echo "<tr><td>".sanitize($emp['full_name'])."</td><td>".sanitize($emp['unit_name']??'-')."</td><td align='center'>{$counts['present']}</td><td align='center'>{$counts['absent']}</td><td align='center'>{$counts['leave']}</td><td align='center'>{$counts['sick']}</td><td align='center'>{$counts['holiday']}</td><td align='center'>{$counts['half_day']}</td></tr>";
+            }
+            echo "</tbody></table>";
+            echo "<p style='margin-top:20px; text-align:right;'><b>Rapor Tarihi:</b> ".date('d.m.Y H:i')."</p>";
+            echo "</body></html>";
+            exit;
+        } catch (Exception $e) {
+            error_log("Word Export Hatası: " . $e->getMessage());
+            setFlash('danger', 'Rapor oluşturulurken bir hata oluştu.');
+            redirect('reports');
         }
-        echo "</tbody></table>";
-        echo "<p style='margin-top:20px; text-align:right;'><b>Rapor Tarihi:</b> ".date('d.m.Y H:i')."</p>";
-        echo "</body></html>";
-        exit;
     }
 
     // TATİL
     if ($action === 'add_holiday') {
-        $n=trim($_POST['name']??''); $d=$_POST['date']??'';
-        if ($n && $d) { $pdo->prepare("INSERT INTO holidays (name,date,is_recurring) VALUES (?,?,?) ON DUPLICATE KEY UPDATE name=?,is_recurring=?")->execute([$n,$d,isset($_POST['is_recurring'])?1:0,$n,isset($_POST['is_recurring'])?1:0]); setFlash('success','Tatil eklendi.'); }
+        try {
+            $n=trim($_POST['name']??''); $d=$_POST['date']??'';
+            if ($n && $d) {
+                $pdo->prepare("INSERT INTO holidays (name,date,is_recurring) VALUES (?,?,?) ON DUPLICATE KEY UPDATE name=?,is_recurring=?")
+                    ->execute([$n,$d,isset($_POST['is_recurring'])?1:0,$n,isset($_POST['is_recurring'])?1:0]);
+                setFlash('success','Tatil eklendi.');
+            }
+        } catch (Exception $e) {
+            error_log("Tatil Ekleme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Tatil eklenirken bir hata oluştu.');
+        }
         redirect('holidays');
     }
-    if ($action === 'delete_holiday') { $id=(int)($_GET['id']??0); if ($id) { $pdo->prepare("DELETE FROM holidays WHERE id=?")->execute([$id]); setFlash('success','Tatil silindi.'); } redirect('holidays'); }
+    if ($action === 'delete_holiday') {
+        try {
+            $id=(int)($_GET['id']??0);
+            if ($id) {
+                $pdo->prepare("DELETE FROM holidays WHERE id=?")->execute([$id]);
+                setFlash('success','Tatil silindi.');
+            }
+        } catch (Exception $e) {
+            error_log("Tatil Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Tatil silinirken bir hata oluştu.');
+        }
+        redirect('holidays');
+    }
 
     // TÜM ŞABLONLARI OLUŞTUR
     if ($action === 'generate_all_templates') {
-        $allUsers = $pdo->query("SELECT id FROM users WHERE is_active=1 AND role='employee'")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($allUsers as $uid) { ensureTemplate($uid); }
-        setFlash('success', count($allUsers) . ' çalışan için şablonlar oluşturuldu/kontrol edildi.');
-        redirect('settings');
+        try {
+            $allUsers = $pdo->query("SELECT id FROM users WHERE is_active=1 AND role='employee'")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($allUsers as $uid) { ensureTemplate($uid); }
+            setFlash('success', count($allUsers) . ' çalışan için şablonlar oluşturuldu/kontrol edildi.');
+        } catch (Exception $e) {
+            error_log("Şablon Oluşturma Hatası: " . $e->getMessage());
+            setFlash('danger', 'Şablonlar oluşturulurken bir hata oluştu.');
+        }
+        redirect('templates');
     }
 
     // TARİH ARALIĞINDA ŞABLONDAN PUANTAJ OLUŞTUR
     if ($action === 'generate_range_records') {
-        $start = $_POST['start_date'] ?? '';
-        $end = $_POST['end_date'] ?? '';
-        $cleanup = isset($_POST['cleanup_others']);
-        
-        if ($start && $end) {
-            $pdo->beginTransaction();
-            try {
+        try {
+            $start = $_POST['start_date'] ?? '';
+            $end = $_POST['end_date'] ?? '';
+            $cleanup = isset($_POST['cleanup_others']);
+
+            if ($start && $end) {
+                $pdo->beginTransaction();
                 if ($cleanup) {
                     $pdo->prepare("DELETE FROM work_records WHERE work_date < ? OR work_date > ?")->execute([$start, $end]);
                 }
@@ -708,8 +1088,8 @@ if (isLoggedIn() && isAdmin()) {
                             $dayOfWeek = (int)$cur->format('N');
                             $isWeekend = ($dayOfWeek >= 6);
                             $status = $isWeekend ? 'holiday' : 'present';
-                            $st = $isWeekend ? null : getSetting('work_start_time', '08:00');
-                            $et = $isWeekend ? null : getSetting('work_end_time', '17:00');
+                            $st = $isWeekend ? null : getSetting('work_start_time', '08:30');
+                            $et = $isWeekend ? null : getSetting('work_end_time', '17:30');
                             $brk = $isWeekend ? 0 : (int)getSetting('break_duration', '60');
                             $unitId = $e['unit_id'];
                             $notes = null;
@@ -727,24 +1107,26 @@ if (isLoggedIn() && isAdmin()) {
                 }
                 $pdo->commit();
                 setFlash('success', 'Belirtilen tarih aralığı için puantaj kayıtları şablondan oluşturuldu.');
-            } catch (Exception $e) {
-                $pdo->rollBack();
-                setFlash('danger', 'Hata oluştu: ' . $e->getMessage());
             }
+        } catch (Exception $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log("Aralık Kayıt Oluşturma Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kayıtlar oluşturulurken bir hata oluştu: ' . $e->getMessage());
         }
         redirect('settings');
     }
 
     // PUANTAJ TEMİZLE (Sıfırla)
     if ($action === 'delete_work_records') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $start = $_POST['start_date'] ?? '';
-        $end = $_POST['end_date'] ?? '';
-        $deleteLeaves = isset($_POST['delete_leaves']);
-        $resetTemplates = isset($_POST['reset_templates']);
-        
-        $pdo->beginTransaction();
         try {
+            $uid = (int)($_POST['user_id'] ?? 0);
+            $start = $_POST['start_date'] ?? '';
+            $end = $_POST['end_date'] ?? '';
+            $deleteLeaves = isset($_POST['delete_leaves']);
+            $resetTemplates = isset($_POST['reset_templates']);
+
+            $pdo->beginTransaction();
+
             // 1. Manuel kayıtları sil (work_records)
             $sql = "DELETE FROM work_records WHERE 1=1";
             $params = [];
@@ -755,7 +1137,7 @@ if (isLoggedIn() && isAdmin()) {
             $stmt->execute($params);
             $count = $stmt->rowCount();
 
-            // 2. Onaylı izinleri sil (leave_records)
+            // 2. İzin kayıtlarını sil (leave_records)
             if ($deleteLeaves) {
                 $lSql = "DELETE FROM leave_records WHERE 1=1";
                 $lParams = [];
@@ -788,8 +1170,8 @@ if (isLoggedIn() && isAdmin()) {
 
                 if (!empty($indices)) {
                     $idxList = implode(',', $indices);
-                    $defStart = getSetting('work_start_time','08:00');
-                    $defEnd = getSetting('work_end_time','17:00');
+                    $defStart = getSetting('work_start_time','08:30');
+                    $defEnd = getSetting('work_end_time','17:30');
                     $defBrk = (int)getSetting('break_duration', 60);
                     
                     $tplSql = "UPDATE work_templates SET 
@@ -811,8 +1193,9 @@ if (isLoggedIn() && isAdmin()) {
             $pdo->commit();
             setFlash('success', "$count adet manuel puantaj kaydı silindi. Seçilen ek temizleme işlemleri uygulandı.");
         } catch (Exception $e) {
-            $pdo->rollBack();
-            setFlash('danger', 'Hata oluştu: ' . $e->getMessage());
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log("Kayıt Silme Hatası: " . $e->getMessage());
+            setFlash('danger', 'Kayıtlar silinirken bir hata oluştu: ' . $e->getMessage());
         }
         redirect('settings');
     }
@@ -820,31 +1203,41 @@ if (isLoggedIn() && isAdmin()) {
 
 // ÇALIŞAN: PROFİL
 if (isLoggedIn() && $action === 'update_profile') {
-    $id=currentUserId(); $fn=trim($_POST['full_name']??'');
-    if ($fn) {
-        $sql="UPDATE users SET full_name=?,email=?,phone=?,address=?";
-        $p=[$fn,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['address']??'') ?: null];
-        if ($_POST['new_password']??'') {
-            $chk=$pdo->prepare("SELECT password FROM users WHERE id=?"); $chk->execute([$id]); $u=$chk->fetch();
-            if (!password_verify($_POST['current_password']??'',$u['password'])) { setFlash('danger','Mevcut şifre hatalı!'); redirect('profile'); }
-            $sql.=",password=?"; $p[]=password_hash($_POST['new_password'],PASSWORD_DEFAULT);
+    try {
+        $id=currentUserId(); $fn=trim($_POST['full_name']??'');
+        if ($fn) {
+            $sql="UPDATE users SET full_name=?,email=?,phone=?,address=?";
+            $p=[$fn,trim($_POST['email']??'') ?: null,trim($_POST['phone']??'') ?: null,trim($_POST['address']??'') ?: null];
+            if ($_POST['new_password']??'') {
+                $chk=$pdo->prepare("SELECT password FROM users WHERE id=?"); $chk->execute([$id]); $u=$chk->fetch();
+                if (!password_verify($_POST['current_password']??'',$u['password'])) { throw new Exception('Mevcut şifre hatalı!'); }
+                $sql.=",password=?"; $p[]=password_hash($_POST['new_password'],PASSWORD_DEFAULT);
+            }
+            $sql.=" WHERE id=?"; $p[]=$id;
+            $pdo->prepare($sql)->execute($p);
+            $_SESSION['user_name']=$fn;
+            setFlash('success','Profil güncellendi.');
         }
-        $sql.=" WHERE id=?"; $p[]=$id;
-        $pdo->prepare($sql)->execute($p);
-        $_SESSION['user_name']=$fn;
-        setFlash('success','Profil güncellendi.');
+    } catch (Exception $e) {
+        error_log("Profil Güncelleme Hatası: " . $e->getMessage());
+        setFlash('danger', $e->getMessage());
     }
     redirect('profile');
 }
 
 // ÇALIŞAN: İZİN TALEBİ
 if (isLoggedIn() && $action === 'request_leave') {
-    $uid=currentUserId(); $sd=$_POST['start_date']??''; $ed=$_POST['end_date']??'';
-    if ($sd && $ed) {
-        $days=max(1,(strtotime($ed)-strtotime($sd))/86400+1);
-        $pdo->prepare("INSERT INTO leave_records (user_id,leave_type,start_date,end_date,total_days,reason,status) VALUES (?,?,?,?,?,?,?)")
-            ->execute([$uid,$_POST['leave_type']??'annual',$sd,$ed,$days,trim($_POST['reason']??'') ?: null,'pending']);
-        setFlash('success','İzin talebiniz gönderildi.');
+    try {
+        $uid=currentUserId(); $sd=$_POST['start_date']??''; $ed=$_POST['end_date']??'';
+        if ($sd && $ed) {
+            $days=max(1,(strtotime($ed)-strtotime($sd))/86400+1);
+            $pdo->prepare("INSERT INTO leave_records (user_id,leave_type,start_date,end_date,total_days,reason,status) VALUES (?,?,?,?,?,?,?)")
+                ->execute([$uid,$_POST['leave_type']??'annual',$sd,$ed,$days,trim($_POST['reason']??'') ?: null,'pending']);
+            setFlash('success','İzin talebiniz gönderildi.');
+        }
+    } catch (Exception $e) {
+        error_log("İzin Talebi Hatası: " . $e->getMessage());
+        setFlash('danger', 'İzin talebi gönderilirken bir hata oluştu.');
     }
     redirect('my_leaves');
 }
@@ -2189,6 +2582,32 @@ elseif ($page === 'settings' && isAdmin()):
             </form>
         </div></div>
         
+        <div class="table-card mb-3"><div class="card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-magic me-2 text-success"></i>Şablondan Kayıt Oluştur</h6></div>
+        <div class="p-4">
+            <form method="post">
+                <input type="hidden" name="action" value="generate_range_records">
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small">Başlangıç</label>
+                        <input type="date" name="start_date" class="form-control form-control-sm" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small">Bitiş</label>
+                        <input type="date" name="end_date" class="form-control form-control-sm" required>
+                    </div>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="cleanup_others" id="cleanupCheck">
+                    <label class="form-check-label small" for="cleanupCheck">
+                        Aralık dışındaki kayıtları temizle
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-success w-100 btn-sm">
+                    <i class="bi bi-magic me-2"></i>Kayıtları Oluştur
+                </button>
+            </form>
+        </div></div>
+
         <div class="table-card mb-3"><div class="card-header"><h6 class="mb-0 fw-bold"><i class="bi bi-trash3 me-2 text-danger"></i>Puantaj Kayıtlarını Sil (Sıfırla)</h6></div>
         <div class="p-4">
             <form method="post" onsubmit="return confirm('Seçilen kriterlere uygun TÜM puantaj kayıtları kalıcı olarak silinecek ve şablona geri dönecektir. Devam etmek istiyor musunuz?')">
