@@ -30,13 +30,6 @@ try {
     die('<div style="text-align:center;padding:50px;font-family:sans-serif;"><h2>Veritabanı Bağlantı Hatası</h2><p>'.htmlspecialchars($e->getMessage()).'</p></div>');
 }
 
-// Admin şifresi hash kontrolü
-$stmt = $pdo->prepare("SELECT password FROM users WHERE username = 'admin'");
-$stmt->execute();
-$ar = $stmt->fetch();
-if ($ar && !password_verify('Aeg151851', $ar['password'])) {
-    $pdo->prepare("UPDATE users SET password = ? WHERE username = 'admin'")->execute([password_hash('Aeg151851', PASSWORD_DEFAULT)]);
-}
 
 // =====================================================
 // YARDIMCI FONKSİYONLAR
@@ -48,7 +41,26 @@ function redirect($p) { header("Location: ?page=$p"); exit; }
 function sanitize($s) { return htmlspecialchars(trim($s ?? ''), ENT_QUOTES, 'UTF-8'); }
 function setFlash($t, $m) { $_SESSION['flash'] = ['type'=>$t, 'message'=>$m]; }
 function getFlash() { if (isset($_SESSION['flash'])) { $f=$_SESSION['flash']; unset($_SESSION['flash']); return $f; } return null; }
-function getSetting($k, $d='') { global $pdo; $s=$pdo->prepare("SELECT setting_value FROM settings WHERE setting_key=?"); $s->execute([$k]); $r=$s->fetch(); return $r ? $r['setting_value'] : $d; }
+
+$allSettings = null;
+function getSetting($k, $d='') {
+    global $pdo, $allSettings;
+    if ($allSettings === null) {
+        try {
+            $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings");
+            $allSettings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+        } catch (Exception $e) {
+            $allSettings = [];
+        }
+    }
+    return $allSettings[$k] ?? $d;
+}
+
+// Load settings into global variables early to avoid issues in actions
+$pageTitle = getSetting('site_title', 'Puantaj Sistemi');
+$themeColor = getSetting('theme_color', '#2563eb');
+$companyName = getSetting('company_name', 'Çeşme Belediyesi');
+
 function formatDate($d) { return $d ? date('d.m.Y', strtotime($d)) : '-'; }
 function formatTime($t) { return $t ? date('H:i', strtotime($t)) : '-'; }
 
@@ -107,9 +119,15 @@ function calcWorkHours($start, $end, $brk = 0) {
  */
 function getCycleDayIndex($dateStr) {
     global $pdo;
-    $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
-    $row = $stmt->fetch();
-    $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+    static $cycleStart = null;
+    static $indexCache = [];
+    if (isset($indexCache[$dateStr])) return $indexCache[$dateStr];
+
+    if ($cycleStart === null) {
+        $stmt = $pdo->query("SELECT cycle_start_date FROM cycle_config ORDER BY id LIMIT 1");
+        $row = $stmt->fetch();
+        $cycleStart = $row ? $row['cycle_start_date'] : '2025-01-06';
+    }
     
     $start = new DateTime($cycleStart);
     $target = new DateTime($dateStr);
@@ -117,6 +135,8 @@ function getCycleDayIndex($dateStr) {
     $cycleLen = 28; // 4 hafta
     $index = $diff % $cycleLen;
     if ($index < 0) $index += $cycleLen;
+
+    $indexCache[$dateStr] = $index;
     return $index;
 }
 
@@ -128,6 +148,8 @@ function getCycleDayIndex($dateStr) {
  */
 function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache = null) {
     global $pdo;
+    static $stmtRec = null;
+    static $stmtTpl = null;
     
     $defStart = getSetting('work_start_time', '08:00');
     $defEnd = getSetting('work_end_time', '17:00');
@@ -138,9 +160,9 @@ function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache
         return $recordsCache[$userId][$dateStr];
     }
     if ($recordsCache === null) {
-        $stmt = $pdo->prepare("SELECT * FROM work_records WHERE user_id=? AND work_date=?");
-        $stmt->execute([$userId, $dateStr]);
-        $rec = $stmt->fetch();
+        if ($stmtRec === null) $stmtRec = $pdo->prepare("SELECT * FROM work_records WHERE user_id=? AND work_date=?");
+        $stmtRec->execute([$userId, $dateStr]);
+        $rec = $stmtRec->fetch();
         if ($rec) return $rec;
     }
     
@@ -160,9 +182,9 @@ function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache
         ];
     }
     if ($templatesCache === null) {
-        $stmt = $pdo->prepare("SELECT * FROM work_templates WHERE user_id=? AND day_index=?");
-        $stmt->execute([$userId, $dayIndex]);
-        $tpl = $stmt->fetch();
+        if ($stmtTpl === null) $stmtTpl = $pdo->prepare("SELECT * FROM work_templates WHERE user_id=? AND day_index=?");
+        $stmtTpl->execute([$userId, $dayIndex]);
+        $tpl = $stmtTpl->fetch();
         if ($tpl) {
             return [
                 'status' => $tpl['status'],
@@ -182,11 +204,12 @@ function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache
     if ($nationalHolidays === null) {
         try {
             $nationalHolidays = $pdo->query("SELECT date FROM holidays")->fetchAll(PDO::FETCH_COLUMN);
+            $nationalHolidays = array_flip($nationalHolidays);
         } catch (Exception $e) {
             $nationalHolidays = [];
         }
     }
-    if (in_array($dateStr, $nationalHolidays)) {
+    if (isset($nationalHolidays[$dateStr])) {
         return [
             'status'           => 'holiday',
             'start_time'       => null,
@@ -220,16 +243,21 @@ function getDayStatus($userId, $dateStr, &$recordsCache = null, &$templatesCache
  */
 function ensureTemplate($userId) {
     global $pdo;
+    static $stmtIns = null;
+    static $stmtUser = null;
+
     $defStart = getSetting('work_start_time', '08:00');
     $defEnd = getSetting('work_end_time', '17:00');
     $defBreak = (int)getSetting('break_duration', '60');
     
     // Kullanıcının unit_id'sini al
-    $stmt = $pdo->prepare("SELECT unit_id FROM users WHERE id=?");
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
+    if ($stmtUser === null) $stmtUser = $pdo->prepare("SELECT unit_id FROM users WHERE id=?");
+    $stmtUser->execute([$userId]);
+    $user = $stmtUser->fetch();
     $unitId = $user['unit_id'] ?? null;
     
+    if ($stmtIns === null) $stmtIns = $pdo->prepare("INSERT IGNORE INTO work_templates (user_id, day_index, unit_id, start_time, end_time, break_minutes, status) VALUES (?,?,?,?,?,?,?)");
+
     for ($i = 0; $i < 28; $i++) {
         $weekDay = ($i % 7); // 0=Pazartesi(döngü başı), ... 5=Cumartesi, 6=Pazar
         $isWeekend = ($weekDay >= 5);
@@ -238,8 +266,7 @@ function ensureTemplate($userId) {
         $end = $isWeekend ? null : $defEnd;
         $brk = $isWeekend ? 0 : $defBreak;
         
-        $pdo->prepare("INSERT IGNORE INTO work_templates (user_id, day_index, unit_id, start_time, end_time, break_minutes, status) VALUES (?,?,?,?,?,?,?)")
-            ->execute([$userId, $i, $unitId, $start, $end, $brk, $status]);
+        $stmtIns->execute([$userId, $i, $unitId, $start, $end, $brk, $status]);
     }
 }
 
@@ -486,6 +513,15 @@ if (isLoggedIn() && isAdmin()) {
     if ($action === 'bulk_work_record') {
         $dt=$_POST['work_date']??''; $udata=$_POST['users']??[];
         if ($dt && !empty($udata)) {
+            $uids = array_keys($udata);
+            list($recs, $tpls) = buildRangeCache($dt, $dt, $uids);
+
+            $stmtIns = $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by)
+                                     VALUES (?,?,?,?,?,?,?,?,?,?)
+                                     ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id),start_time=VALUES(start_time),end_time=VALUES(end_time),
+                                     break_minutes=VALUES(break_minutes),overtime_minutes=VALUES(overtime_minutes),status=VALUES(status),
+                                     notes=VALUES(notes),created_by=VALUES(created_by)");
+
             foreach ($udata as $uid => $d) {
                 $uid=(int)$uid; $status=$d['status']??'present';
                 $st=$d['start_time'] ?: null; $et=$d['end_time'] ?: null;
@@ -493,7 +529,7 @@ if (isLoggedIn() && isAdmin()) {
                 $unitId=(int)($d['unit_id']??0); $notes=trim($d['notes']??'');
                 
                 // Sadece varsayılandan farklıysa kaydet
-                $default = getDayStatus($uid, $dt);
+                $default = getDayStatus($uid, $dt, $recs, $tpls);
                 $isDifferent = ($status !== ($default['status']??'present')) ||
                                ($st && $st !== ($default['start_time']??'')) ||
                                ($et && $et !== ($default['end_time']??'')) ||
@@ -501,14 +537,7 @@ if (isLoggedIn() && isAdmin()) {
                                ($ot > 0) || ($notes !== '') || ($unitId > 0 && $unitId != ($default['unit_id']??0));
                 
                 if ($isDifferent) {
-                    $chk=$pdo->prepare("SELECT id FROM work_records WHERE user_id=? AND work_date=?"); $chk->execute([$uid,$dt]);
-                    if ($chk->fetch()) {
-                        $pdo->prepare("UPDATE work_records SET unit_id=?,start_time=?,end_time=?,break_minutes=?,overtime_minutes=?,status=?,notes=?,created_by=? WHERE user_id=? AND work_date=?")
-                            ->execute([$unitId ?: null,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId(),$uid,$dt]);
-                    } else {
-                        $pdo->prepare("INSERT INTO work_records (user_id,unit_id,work_date,start_time,end_time,break_minutes,overtime_minutes,status,notes,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)")
-                            ->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
-                    }
+                    $stmtIns->execute([$uid,$unitId ?: null,$dt,$st,$et,$brk,$ot,$status,$notes ?: null,currentUserId()]);
                 }
             }
             setFlash('success','Toplu puantaj güncellendi.');
@@ -525,6 +554,10 @@ if (isLoggedIn() && isAdmin()) {
         $uid=(int)($_POST['user_id']??0);
         if ($uid) {
             $tdata = $_POST['template'] ?? [];
+            $stmt = $pdo->prepare("INSERT INTO work_templates (user_id,day_index,unit_id,start_time,end_time,break_minutes,status,notes)
+                                   VALUES (?,?,?,?,?,?,?,?)
+                                   ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id),start_time=VALUES(start_time),end_time=VALUES(end_time),
+                                   break_minutes=VALUES(break_minutes),status=VALUES(status),notes=VALUES(notes)");
             foreach ($tdata as $dayIdx => $d) {
                 $dayIdx = (int)$dayIdx;
                 $status = $d['status'] ?? 'present';
@@ -534,8 +567,7 @@ if (isLoggedIn() && isAdmin()) {
                 $unitId = (int)($d['unit_id'] ?? 0);
                 $notes = trim($d['notes'] ?? '');
                 
-                $pdo->prepare("INSERT INTO work_templates (user_id,day_index,unit_id,start_time,end_time,break_minutes,status,notes) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id),start_time=VALUES(start_time),end_time=VALUES(end_time),break_minutes=VALUES(break_minutes),status=VALUES(status),notes=VALUES(notes)")
-                    ->execute([$uid,$dayIdx,$unitId ?: null,$st,$et,$brk,$status,$notes ?: null]);
+                $stmt->execute([$uid,$dayIdx,$unitId ?: null,$st,$et,$brk,$status,$notes ?: null]);
             }
             setFlash('success','4 haftalık şablon güncellendi.');
         }
@@ -699,18 +731,23 @@ if (isLoggedIn() && isAdmin()) {
                                        ON DUPLICATE KEY UPDATE unit_id=VALUES(unit_id), start_time=VALUES(start_time), end_time=VALUES(end_time), 
                                        break_minutes=VALUES(break_minutes), status=VALUES(status), notes=VALUES(notes), created_by=VALUES(created_by)");
 
+                $defStart = getSetting('work_start_time', '08:00');
+                $defEnd = getSetting('work_end_time', '17:00');
+                $defBrk = (int)getSetting('break_duration', '60');
+
                 while ($cur <= $last) {
                     $dateStr = $cur->format('Y-m-d');
                     $dayIdx = getCycleDayIndex($dateStr);
+                    $dayOfWeek = (int)$cur->format('N');
+                    $isWeekend = ($dayOfWeek >= 6);
+
                     foreach ($emps as $e) {
                         $tpl = $tplMap[$e['id']][$dayIdx] ?? null;
                         if (!$tpl) {
-                            $dayOfWeek = (int)$cur->format('N');
-                            $isWeekend = ($dayOfWeek >= 6);
                             $status = $isWeekend ? 'holiday' : 'present';
-                            $st = $isWeekend ? null : getSetting('work_start_time', '08:00');
-                            $et = $isWeekend ? null : getSetting('work_end_time', '17:00');
-                            $brk = $isWeekend ? 0 : (int)getSetting('break_duration', '60');
+                            $st = $isWeekend ? null : $defStart;
+                            $et = $isWeekend ? null : $defEnd;
+                            $brk = $isWeekend ? 0 : $defBrk;
                             $unitId = $e['unit_id'];
                             $notes = null;
                         } else {
@@ -855,10 +892,6 @@ if (isLoggedIn() && $action === 'request_leave') {
 $page = $_GET['page'] ?? '';
 if (!isLoggedIn() && !in_array($page, ['login','register',''])) $page = 'login';
 if ($page === '' || $page === 'home') $page = isLoggedIn() ? 'dashboard' : 'login';
-
-$pageTitle = getSetting('site_title', 'Puantaj Sistemi');
-$themeColor = getSetting('theme_color', '#2563eb');
-$companyName = getSetting('company_name', 'Çeşme Belediyesi');
 ?>
 <!DOCTYPE html>
 <html lang="tr">
@@ -1586,8 +1619,11 @@ elseif ($page === 'bulk_entry' && isAdmin()):
             <table class="table table-hover mb-0" style="font-size:.82rem">
                 <thead><tr><th>Çalışan</th><th>Birim</th><th>Durum</th><th>Giriş</th><th>Çıkış</th><th>Mola</th><th>F.Mesai</th><th>Not</th></tr></thead>
                 <tbody>
-                    <?php foreach($employees as $emp):
-                        $dayData = getDayStatus($emp['id'], $selDate);
+                    <?php
+                    $empIds = array_column($employees, 'id');
+                    list($bulkRecs, $bulkTpls) = buildRangeCache($selDate, $selDate, $empIds);
+                    foreach($employees as $emp):
+                        $dayData = getDayStatus($emp['id'], $selDate, $bulkRecs, $bulkTpls);
                         $defStart = getSetting('work_start_time','08:00');
                         $defEnd = getSetting('work_end_time','17:00');
                     ?>
