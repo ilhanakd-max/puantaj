@@ -190,7 +190,8 @@ function initDatabase() {
             'work_start_time' => ['08:30', 'Varsayılan mesai başlangıç'],
             'work_end_time' => ['17:30', 'Varsayılan mesai bitiş'],
             'break_duration' => ['60', 'Varsayılan öğle arası (dakika)'],
-            'theme_color' => ['#2563eb', 'Ana tema rengi']
+            'theme_color' => ['#2563eb', 'Ana tema rengi'],
+            'default_page' => ['timesheet', 'Varsayılan açılış sayfası']
         ];
         foreach ($defaultSettings as $k => $v) {
             $stmt = $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)");
@@ -1247,7 +1248,9 @@ if (isLoggedIn() && $action === 'request_leave') {
 // =====================================================
 $page = $_GET['page'] ?? '';
 if (!isLoggedIn() && !in_array($page, ['login','register',''])) $page = 'login';
-if ($page === '' || $page === 'home') $page = isLoggedIn() ? 'dashboard' : 'login';
+if ($page === '' || $page === 'home') {
+    $page = isLoggedIn() ? getSetting('default_page', 'timesheet') : 'login';
+}
 
 $pageTitle = getSetting('site_title', 'Puantaj Sistemi');
 $themeColor = getSetting('theme_color', '#2563eb');
@@ -2561,8 +2564,18 @@ elseif ($page === 'settings' && isAdmin()):
                 <?php foreach($settings as $s): ?>
                 <div class="col-md-6">
                     <label class="form-label"><?=sanitize($s['description']?:$s['setting_key'])?></label>
-                    <?php if($s['setting_key']==='theme_color'): ?><input type="color" name="settings[<?=$s['setting_key']?>]" class="form-control form-control-color w-100" value="<?=sanitize($s['setting_value'])?>">
-                    <?php else: ?><input type="text" name="settings[<?=$s['setting_key']?>]" class="form-control" value="<?=sanitize($s['setting_value'])?>">
+                    <?php if($s['setting_key']==='theme_color'): ?>
+                        <input type="color" name="settings[<?=$s['setting_key']?>]" class="form-control form-control-color w-100" value="<?=sanitize($s['setting_value'])?>">
+                    <?php elseif($s['setting_key']==='default_page'): ?>
+                        <select name="settings[<?=$s['setting_key']?>]" class="form-select">
+                            <option value="dashboard" <?=$s['setting_value']==='dashboard'?'selected':''?>>Kontrol Paneli (Dashboard)</option>
+                            <option value="timesheet" <?=$s['setting_value']==='timesheet'?'selected':''?>>Puantaj Tablosu</option>
+                            <option value="templates" <?=$s['setting_value']==='templates'?'selected':''?>>4 Haftalık Şablonlar</option>
+                            <option value="reports" <?=$s['setting_value']==='reports'?'selected':''?>>Raporlar</option>
+                            <option value="profile" <?=$s['setting_value']==='profile'?'selected':''?>>Profil</option>
+                        </select>
+                    <?php else: ?>
+                        <input type="text" name="settings[<?=$s['setting_key']?>]" class="form-control" value="<?=sanitize($s['setting_value'])?>">
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
