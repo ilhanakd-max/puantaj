@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puantaj Takip Uygulaması</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #fff;
+            --text-color: #000;
+        }
+        [data-theme="dark"] {
+            --bg-color: #222;
+            --text-color: #fff;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        #sidebar-wrapper {
+            background-color: var(--sidebar-bg-color, #343a40);
+        }
+        .list-group-item {
+            background-color: var(--sidebar-bg-color, #343a40);
+            color: var(--sidebar-text-color, #fff);
+        }
+        [data-theme="light"] {
+            --sidebar-bg-color: #f8f9fa;
+            --sidebar-text-color: #000;
+        }
+        #wrapper.toggled #sidebar-wrapper {
+            margin-left: -15rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div class="bg-dark border-right" id="sidebar-wrapper" style="width: 15rem;">
+            <div class="sidebar-heading text-white">Puantaj Takip</div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action" data-page="dashboard">Dashboard</a>
+                <a href="#" class="list-group-item list-group-item-action" data-page="employees">Personel Listesi</a>
+                <a href="#" class="list-group-item list-group-item-action" data-page="reports">Raporlar</a>
+                <a href="#" class="list-group-item list-group-item-action" data-page="backup">Yedekle / Geri Yükle</a>
+                <a href="#" class="list-group-item list-group-item-action" data-page="settings">Ayarlar</a>
+            </div>
+        </div>
+        <!-- /#sidebar-wrapper -->
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
+                <div class="container-fluid">
+                    <button class="btn btn-primary" id="menu-toggle">Menüyü Gizle</button>
+                    <div class="form-check form-switch ms-auto">
+                        <input class="form-check-input" type="checkbox" id="theme-toggle">
+                        <label class="form-check-label" for="theme-toggle">Koyu Mod</label>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="container-fluid mt-4">
+                <!-- Page content will be loaded here -->
+                <div id="dashboard-page" class="page">
+                    <h1>Dashboard</h1>
+                    <p>Puantaj Takip Uygulamasına hoş geldiniz.</p>
+                </div>
+
+                <div id="employees-page" class="page d-none">
+                    <h1>Personel Listesi</h1>
+                    <button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#add-employee-modal">Yeni Personel Ekle</button>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Ad Soyad</th>
+                                <th>TC No</th>
+                                <th>Telefon</th>
+                                <th>Departman</th>
+                                <th>Görev</th>
+                                <th>İşe Başlama Tarihi</th>
+                                <th>İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody id="employee-list">
+                            <!-- Employee list will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="employee-detail-page" class="page d-none">
+                    <h1 id="employee-name-title"></h1>
+                    <div class="card">
+                        <div class="card-header">
+                            Puantaj Girişi
+                        </div>
+                        <div class="card-body">
+                            <form id="puantaj-form">
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <label for="puantaj-date" class="form-label">Tarih</label>
+                                        <input type="date" class="form-control" id="puantaj-date" required>
+                                    </div>
+                                    <div class="col-md-2 mb-3">
+                                        <label for="work-hours" class="form-label">Çalışılan Saat</label>
+                                        <input type="number" class="form-control" id="work-hours" required>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <label for="overtime-type" class="form-label">Mesai Türü</label>
+                                        <select class="form-select" id="overtime-type">
+                                            <option value="normal">Normal</option>
+                                            <option value="gece">Gece</option>
+                                            <option value="resmi-tatil">Resmi Tatil</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2 mb-3">
+                                        <label for="leave-info" class="form-label">İzin Bilgisi</label>
+                                        <input type="text" class="form-control" id="leave-info">
+                                    </div>
+                                    <div class="col-md-2 mb-3">
+                                        <label for="shift-info" class="form-label">Vardiya</label>
+                                        <select class="form-select" id="shift-info">
+                                            <option value="gunduz">Gündüz</option>
+                                            <option value="gece">Gece</option>
+                                            <option value="ozel">Özel</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="puantaj-notes" class="form-label">Not</label>
+                                    <textarea class="form-control" id="puantaj-notes" rows="3"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Kaydet</button>
+                            </form>
+                        </div>
+                    </div>
+                    <h2 class="mt-4">Puantaj Geçmişi</h2>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Çalışılan Saat</th>
+                                <th>Mesai Türü</th>
+                                <th>İzin Bilgisi</th>
+                                <th>Vardiya</th>
+                                <th>Not</th>
+                                <th>İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody id="puantaj-history">
+                            <!-- Puantaj history will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="reports-page" class="page d-none">
+                    <h1>Raporlar</h1>
+                    <div class="card">
+                        <div class="card-header">
+                            Raporlama Seçenekleri
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label for="report-type" class="form-label">Rapor Türü</label>
+                                    <select class="form-select" id="report-type">
+                                        <option value="monthly">Aylık Puantaj Raporu</option>
+                                        <option value="employee">Personel Bazlı Rapor</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="report-month" class="form-label">Ay</label>
+                                    <input type="month" class="form-control" id="report-month">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="report-employee" class="form-label">Personel</label>
+                                    <select class="form-select" id="report-employee">
+                                        <!-- Employee list will be populated here -->
+                                    </select>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" id="generate-report-btn">Rapor Oluştur</button>
+                        </div>
+                    </div>
+                    <div class="mt-4" id="report-output">
+                        <!-- Report will be displayed here -->
+                    </div>
+                    <button class="btn btn-secondary mt-3" id="export-pdf-btn">PDF Olarak Dışa Aktar</button>
+                    <button class="btn btn-secondary mt-3" id="export-json-btn">JSON Olarak Dışa Aktar</button>
+                    <button class="btn btn-secondary mt-3" id="export-text-btn">Metin Olarak Dışa Aktar</button>
+                </div>
+
+                <div id="backup-page" class="page d-none">
+                    <h1>Yedekle / Geri Yükle</h1>
+                    <p>Uygulama verilerini yedekleyebilir veya daha önce aldığınız bir yedeği geri yükleyebilirsiniz.</p>
+                    <button class="btn btn-success" id="backup-btn">Yedekle</button>
+                    <button class="btn btn-warning" id="restore-btn">Geri Yükle</button>
+                    <input type="file" id="restore-file" class="d-none" accept=".json">
+                </div>
+
+                <div id="settings-page" class="page d-none">
+                    <h1>Ayarlar</h1>
+                    <p>Uygulama ayarları burada yer alacaktır.</p>
+                </div>
+
+            </div>
+        </div>
+        <!-- /#page-content-wrapper -->
+    </div>
+    <!-- /#wrapper -->
+
+    <!-- Add Employee Modal -->
+    <div class="modal fade" id="add-employee-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Yeni Personel Ekle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="add-employee-form">
+                        <div class="mb-3">
+                            <label for="ad-soyad" class="form-label">Ad Soyad</label>
+                            <input type="text" class="form-control" id="ad-soyad" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="tc-no" class="form-label">TC No</label>
+                            <input type="text" class="form-control" id="tc-no" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="telefon" class="form-label">Telefon</label>
+                            <input type="text" class="form-control" id="telefon" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="departman" class="form-label">Departman</label>
+                            <input type="text" class="form-control" id="departman" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="gorev" class="form-label">Görev</label>
+                            <input type="text" class="form-control" id="gorev" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="ise-baslama-tarihi" class="form-label">İşe Başlama Tarihi</label>
+                            <input type="date" class="form-control" id="ise-baslama-tarihi" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Kaydet</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Employee Modal -->
+    <div class="modal fade" id="edit-employee-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Personel Bilgilerini Düzenle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-employee-form">
+                        <input type="hidden" id="edit-employee-id">
+                        <div class="mb-3">
+                            <label for="edit-ad-soyad" class="form-label">Ad Soyad</label>
+                            <input type="text" class="form-control" id="edit-ad-soyad" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-tc-no" class="form-label">TC No</label>
+                            <input type="text" class="form-control" id="edit-tc-no" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-telefon" class="form-label">Telefon</label>
+                            <input type="text" class="form-control" id="edit-telefon" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-departman" class="form-label">Departman</label>
+                            <input type="text" class="form-control" id="edit-departman" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-gorev" class="form-label">Görev</label>
+                            <input type="text" class="form-control" id="edit-gorev" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-ise-baslama-tarihi" class="form-label">İşe Başlama Tarihi</label>
+                            <input type="date" class="form-control" id="edit-ise-baslama-tarihi" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Kaydet</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd.js"></script>
+
+    <script>
+        let fileHandle;
+
+        class Storage {
+            static async _getDbFileHandle() {
+                if (fileHandle) {
+                    return fileHandle;
+                }
+                fileHandle = await idbKeyval.get('fileHandle');
+                if (fileHandle) {
+                    return fileHandle;
+                }
+                if (window.showOpenFilePicker) {
+                    try {
+                        [fileHandle] = await window.showOpenFilePicker({
+                            types: [{
+                                description: 'JSON Files',
+                                accept: { 'application/json': ['.json'] }
+                            }]
+                        });
+                        await idbKeyval.set('fileHandle', fileHandle);
+                        return fileHandle;
+                    } catch (e) {
+                        console.error('File picker was cancelled or failed', e);
+                        return null;
+                    }
+                }
+                return null;
+            }
+
+            static async _readData() {
+                if (location.protocol === 'file:' && window.showOpenFilePicker) {
+                    const handle = await this._getDbFileHandle();
+                    if (!handle) return { employees: [], puantaj: {} };
+                    const file = await handle.getFile();
+                    const contents = await file.text();
+                    return JSON.parse(contents || '{}');
+                } else {
+                    return {
+                        employees: JSON.parse(localStorage.getItem('employees')) || [],
+                        puantaj: JSON.parse(localStorage.getItem('puantaj')) || {}
+                    };
+                }
+            }
+
+            static async _writeData(data) {
+                if (location.protocol === 'file:' && fileHandle) {
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(JSON.stringify(data, null, 2));
+                    await writable.close();
+                } else {
+                    localStorage.setItem('employees', JSON.stringify(data.employees));
+                    localStorage.setItem('puantaj', JSON.stringify(data.puantaj));
+                }
+            }
+
+            static async getEmployees() {
+                const data = await this._readData();
+                return data.employees || [];
+            }
+
+            static async saveEmployees(employees) {
+                const data = await this._readData();
+                data.employees = employees;
+                await this._writeData(data);
+            }
+
+            static async getPuantaj(employeeId) {
+                const data = await this._readData();
+                return data.puantaj[employeeId] || [];
+            }
+
+            static async savePuantaj(employeeId, puantaj) {
+                const data = await this._readData();
+                if (!data.puantaj) {
+                    data.puantaj = {};
+                }
+                data.puantaj[employeeId] = puantaj;
+                await this._writeData(data);
+            }
+        }
+
+        class Employee {
+            constructor(id, adSoyad, tcNo, telefon, departman, gorev, iseBaslamaTarihi) {
+                this.id = id;
+                this.adSoyad = adSoyad;
+                this.tcNo = tcNo;
+                this.telefon = telefon;
+                this.departman = departman;
+                this.gorev = gorev;
+                this.iseBaslamaTarihi = iseBaslamaTarihi;
+            }
+        }
+
+        class Puantaj {
+            constructor(id, date, workHours, overtimeType, leaveInfo, shiftInfo, notes) {
+                this.id = id;
+                this.date = date;
+                this.workHours = workHours;
+                this.overtimeType = overtimeType;
+                this.leaveInfo = leaveInfo;
+                this.shiftInfo = shiftInfo;
+                this.notes = notes;
+            }
+        }
+
+        class UI {
+            static showPage(pageId) {
+                const pages = document.querySelectorAll('.page');
+                pages.forEach(page => {
+                    if (page.id === `${pageId}-page`) {
+                        page.classList.remove('d-none');
+                    } else {
+                        page.classList.add('d-none');
+                    }
+                });
+            }
+
+            static async displayEmployees() {
+                const employees = await Storage.getEmployees();
+                const employeeList = document.getElementById('employee-list');
+                employeeList.innerHTML = '';
+                employees.forEach(employee => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${employee.adSoyad}</td>
+                        <td>${employee.tcNo}</td>
+                        <td>${employee.telefon}</td>
+                        <td>${employee.departman}</td>
+                        <td>${employee.gorev}</td>
+                        <td>${employee.iseBaslamaTarihi}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary view-puantaj" data-id="${employee.id}">Puantaj</button>
+                            <button class="btn btn-sm btn-warning edit-employee" data-id="${employee.id}" data-bs-toggle="modal" data-bs-target="#edit-employee-modal">Düzenle</button>
+                            <button class="btn btn-sm btn-danger delete-employee" data-id="${employee.id}">Sil</button>
+                        </td>
+                    `;
+                    employeeList.appendChild(row);
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            UI.showPage('dashboard');
+            await UI.displayEmployees();
+            await populateReportEmployeeDropdown();
+        });
+
+        document.querySelector('.list-group').addEventListener('click', (e) => {
+            if (e.target.dataset.page) {
+                UI.showPage(e.target.dataset.page);
+            }
+        });
+
+        document.getElementById('add-employee-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const adSoyad = document.getElementById('ad-soyad').value;
+            const tcNo = document.getElementById('tc-no').value;
+            const telefon = document.getElementById('telefon').value;
+            const departman = document.getElementById('departman').value;
+            const gorev = document.getElementById('gorev').value;
+            const iseBaslamaTarihi = document.getElementById('ise-baslama-tarihi').value;
+            const id = new Date().getTime().toString();
+            const employee = new Employee(id, adSoyad, tcNo, telefon, departman, gorev, iseBaslamaTarihi);
+            const employees = await Storage.getEmployees();
+            employees.push(employee);
+            await Storage.saveEmployees(employees);
+            await UI.displayEmployees();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('add-employee-modal'));
+            modal.hide();
+            e.target.reset();
+        });
+
+        document.getElementById('employee-list').addEventListener('click', async (e) => {
+            if (e.target.classList.contains('delete-employee')) {
+                const id = e.target.dataset.id;
+                let employees = await Storage.getEmployees();
+                employees = employees.filter(employee => employee.id !== id);
+                await Storage.saveEmployees(employees);
+                const data = await Storage._readData();
+                delete data.puantaj[id];
+                await Storage._writeData(data);
+                UI.displayEmployees();
+            } else if (e.target.classList.contains('edit-employee')) {
+                const id = e.target.dataset.id;
+                const employees = await Storage.getEmployees();
+                const employee = employees.find(emp => emp.id === id);
+                document.getElementById('edit-employee-id').value = employee.id;
+                document.getElementById('edit-ad-soyad').value = employee.adSoyad;
+                document.getElementById('edit-tc-no').value = employee.tcNo;
+                document.getElementById('edit-telefon').value = employee.telefon;
+                document.getElementById('edit-departman').value = employee.departman;
+                document.getElementById('edit-gorev').value = employee.gorev;
+                document.getElementById('edit-ise-baslama-tarihi').value = employee.iseBaslamaTarihi;
+            } else if (e.target.classList.contains('view-puantaj')) {
+                currentEmployeeId = e.target.dataset.id;
+                const employees = await Storage.getEmployees();
+                const employee = employees.find(emp => emp.id === currentEmployeeId);
+                document.getElementById('employee-name-title').textContent = employee.adSoyad;
+                UI.showPage('employee-detail');
+                displayPuantajHistory(currentEmployeeId);
+            }
+        });
+
+        document.getElementById('edit-employee-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-employee-id').value;
+            const adSoyad = document.getElementById('edit-ad-soyad').value;
+            const tcNo = document.getElementById('edit-tc-no').value;
+            const telefon = document.getElementById('edit-telefon').value;
+            const departman = document.getElementById('edit-departman').value;
+            const gorev = document.getElementById('edit-gorev').value;
+            const iseBaslamaTarihi = document.getElementById('edit-ise-baslama-tarihi').value;
+            let employees = await Storage.getEmployees();
+            const employeeIndex = employees.findIndex(emp => emp.id === id);
+            employees[employeeIndex] = new Employee(id, adSoyad, tcNo, telefon, departman, gorev, iseBaslamaTarihi);
+            await Storage.saveEmployees(employees);
+            UI.displayEmployees();
+            const modal = bootstrap.Modal.getInstance(document.getElementById('edit-employee-modal'));
+            modal.hide();
+        });
+
+        let currentEmployeeId = null;
+
+        document.getElementById('puantaj-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const date = document.getElementById('puantaj-date').value;
+            const workHours = document.getElementById('work-hours').value;
+            const overtimeType = document.getElementById('overtime-type').value;
+            const leaveInfo = document.getElementById('leave-info').value;
+            const shiftInfo = document.getElementById('shift-info').value;
+            const notes = document.getElementById('puantaj-notes').value;
+            const id = new Date().getTime().toString();
+            const puantajEntry = new Puantaj(id, date, workHours, overtimeType, leaveInfo, shiftInfo, notes);
+            const puantajHistory = await Storage.getPuantaj(currentEmployeeId);
+            puantajHistory.push(puantajEntry);
+            await Storage.savePuantaj(currentEmployeeId, puantajHistory);
+            displayPuantajHistory(currentEmployeeId);
+            e.target.reset();
+        });
+
+        async function displayPuantajHistory(employeeId) {
+            const puantajHistory = await Storage.getPuantaj(employeeId);
+            const puantajHistoryEl = document.getElementById('puantaj-history');
+            puantajHistoryEl.innerHTML = '';
+            puantajHistory.forEach(entry => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${entry.date}</td>
+                    <td>${entry.workHours}</td>
+                    <td>${entry.overtimeType}</td>
+                    <td>${entry.leaveInfo}</td>
+                    <td>${entry.shiftInfo}</td>
+                    <td>${entry.notes}</td>
+                    <td>
+                        <button class="btn btn-sm btn-danger delete-puantaj" data-id="${entry.id}">Sil</button>
+                    </td>
+                `;
+                puantajHistoryEl.appendChild(row);
+            });
+        }
+
+        document.getElementById('puantaj-history').addEventListener('click', async (e) => {
+            if (e.target.classList.contains('delete-puantaj')) {
+                const id = e.target.dataset.id;
+                let puantajHistory = await Storage.getPuantaj(currentEmployeeId);
+                puantajHistory = puantajHistory.filter(entry => entry.id !== id);
+                await Storage.savePuantaj(currentEmployeeId, puantajHistory);
+                displayPuantajHistory(currentEmployeeId);
+            }
+        });
+
+        document.getElementById('generate-report-btn').addEventListener('click', generateReport);
+
+        async function populateReportEmployeeDropdown() {
+            const employees = await Storage.getEmployees();
+            const select = document.getElementById('report-employee');
+            select.innerHTML = '<option value="">Tüm Personeller</option>';
+            employees.forEach(employee => {
+                const option = document.createElement('option');
+                option.value = employee.id;
+                option.textContent = employee.adSoyad;
+                select.appendChild(option);
+            });
+        }
+
+        async function generateReport() {
+            const reportType = document.getElementById('report-type').value;
+            const month = document.getElementById('report-month').value;
+            const employeeId = document.getElementById('report-employee').value;
+            const reportOutput = document.getElementById('report-output');
+            reportOutput.innerHTML = '';
+
+            let reportData = [];
+
+            if (reportType === 'monthly') {
+                const employees = await Storage.getEmployees();
+                for (const employee of employees) {
+                    const puantaj = await Storage.getPuantaj(employee.id);
+                    const filteredPuantaj = puantaj.filter(entry => entry.date.startsWith(month));
+                    if (filteredPuantaj.length > 0) {
+                        reportData.push({ employee, puantaj: filteredPuantaj });
+                    }
+                }
+            } else if (reportType === 'employee' && employeeId) {
+                const employees = await Storage.getEmployees();
+                const employee = employees.find(emp => emp.id === employeeId);
+                const puantaj = await Storage.getPuantaj(employeeId);
+                reportData.push({ employee, puantaj });
+            }
+
+            let html = '<table class="table table-bordered">';
+            reportData.forEach(data => {
+                let totalHours = 0;
+                let normalOvertime = 0;
+                let nightOvertime = 0;
+                let holidayOvertime = 0;
+
+                html += `<thead><tr><th colspan="6">${data.employee.adSoyad}</th></tr></thead>`;
+                html += '<tbody>';
+                data.puantaj.forEach(entry => {
+                    totalHours += Number(entry.workHours);
+                    switch (entry.overtimeType) {
+                        case 'normal':
+                            normalOvertime += Number(entry.workHours);
+                            break;
+                        case 'gece':
+                            nightOvertime += Number(entry.workHours);
+                            break;
+                        case 'resmi-tatil':
+                            holidayOvertime += Number(entry.workHours);
+                            break;
+                    }
+                    html += `
+                        <tr>
+                            <td>${entry.date}</td>
+                            <td>${entry.workHours}</td>
+                            <td>${entry.overtimeType}</td>
+                            <td>${entry.leaveInfo}</td>
+                            <td>${entry.shiftInfo}</td>
+                            <td>${entry.notes}</td>
+                        </tr>
+                    `;
+                });
+                html += '</tbody>';
+                html += `<tfoot>
+                    <tr>
+                        <td colspan="5">Toplam Çalışma Saati</td>
+                        <td>${totalHours}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="5">Toplam Normal Mesai</td>
+                        <td>${normalOvertime}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="5">Toplam Gece Mesaisi</td>
+                        <td>${nightOvertime}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="5">Toplam Resmi Tatil Mesaisi</td>
+                        <td>${holidayOvertime}</td>
+                    </tr>
+                </tfoot>`;
+            });
+            html += '</table>';
+            reportOutput.innerHTML = html;
+        }
+
+        document.getElementById('export-pdf-btn').addEventListener('click', () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const reportOutput = document.getElementById('report-output');
+            doc.html(reportOutput, {
+                callback: function (doc) {
+                    doc.save('rapor.pdf');
+                },
+                x: 10,
+                y: 10
+            });
+        });
+
+        document.getElementById('export-json-btn').addEventListener('click', async () => {
+            const data = {
+                employees: await Storage.getEmployees(),
+                puantaj: (await Storage._readData()).puantaj || {}
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "rapor.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+
+        document.getElementById('export-text-btn').addEventListener('click', () => {
+            const reportOutput = document.getElementById('report-output');
+            const data = reportOutput.innerText;
+            const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(data);
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "rapor.txt");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await populateReportEmployeeDropdown();
+        });
+
+        document.getElementById('theme-toggle').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        });
+
+        document.getElementById('menu-toggle').addEventListener('click', () => {
+            document.getElementById('wrapper').classList.toggle('toggled');
+        });
+
+        document.getElementById('backup-btn').addEventListener('click', async () => {
+            const data = {
+                employees: await Storage.getEmployees(),
+                puantaj: (await Storage._readData()).puantaj || {}
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "puantaj_data.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+
+        document.getElementById('restore-btn').addEventListener('click', () => {
+            document.getElementById('restore-file').click();
+        });
+
+        document.getElementById('restore-file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async function (event) {
+                    const data = JSON.parse(event.target.result);
+                    if (confirm('Mevcut verilerin üzerine yazılsın mı?')) {
+                        await Storage._writeData(data);
+                        UI.displayEmployees();
+                        alert('Veriler başarıyla geri yüklendi.');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+    </script>
+</body>
+</html>
